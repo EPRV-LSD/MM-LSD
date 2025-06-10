@@ -2,7 +2,7 @@
 
 Multi-Mask Least-Squares Deconvolution
 
-#### email:  fl386_at_cam.ac.uk
+#### email:  florian.lienhard_at_phys.ethz.ch
 #### First Version 28 April 2022
 
 
