@@ -59,7 +59,8 @@ for paramlist in product(*listOLists):
 
     for cn, keyword in enumerate(grid.keys()):
         if cn < len(listOLists):
-            params[keyword][count] = paramlist[cn]
+            # params[keyword][count] = paramlist[cn]
+            params.loc[count, keyword] = paramlist[cn]
     count += 1
 
 params.to_csv("./stars/" + star + "/params.csv", index=False)

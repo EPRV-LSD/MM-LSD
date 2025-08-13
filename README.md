@@ -1,6 +1,6 @@
 # MM-LSD
 
-Multi-Mask Least-Squares Deconvolution
+Multi-Mask Least-Squares Deconvolution - Development version
 
 #### email:  florian.lienhard_at_phys.ethz.ch
 #### First Version 28 April 2022
@@ -11,7 +11,7 @@ Multi-Mask Least-Squares Deconvolution
 
 ### [MNRAS](https://doi.org/10.1093/mnras/stac1098), [arXiv](https://arxiv.org/abs/2204.13556)
 
-
+## This branch is for development of the MM-LSD code to run with ESSP data.
 
 #### Brief description of MM-LSD:
 

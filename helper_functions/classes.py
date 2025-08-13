@@ -853,7 +853,7 @@ def extract_rv_from_common_profiles(
     Zerrs = []
 
     for ii in epoch_list:
-        print(ii)
+        # print(ii)
         # ----------------------------------------------------------
         # testing weighting (and normalising) the common profiles of the different orders before addition
 

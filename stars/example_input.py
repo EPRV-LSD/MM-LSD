@@ -1,6 +1,9 @@
 import os
 
-star = "ESSP_HARPSN"
+
+# TODO: This can be inferred from the user input
+star = "STAR_NAME"
+
 
 #checklist for preprocessing:
 #star name defined above
@@ -17,7 +20,7 @@ star = "ESSP_HARPSN"
 from datetime import date
 today = date.today()
 #indic = str(today.year)+str(today.month)+str(today.day)
-indic = "11"
+indic = "1"
 
 # -------------------------------------------------------------
 #           Settings for MM-LSD run (what should be done in this run?)
@@ -65,9 +68,9 @@ if not os.path.exists(resdir):
     os.mkdir(resdir)
 
 #rvs and associated uncertainties from MM-LSD will be saved in these pickle files
-rvresfile = resdir+"lsd_rv_"+star+f"_{indic}.pkl"
-rverrresfile = resdir+"lsd_rv_err_"+star+f"_{indic}.pkl"  
-commonprofilefile = resdir+"common_profile_"+star+f"_{indic}.pkl"  
+rvresfile = resdir+"lsd_rv.pkl"
+rverrresfile = resdir+"lsd_rv_err.pkl"  
+commonprofilefile = resdir+"common_profile.pkl"  
 
 # -------------------------------------------------------------
 #           Data 
@@ -117,12 +120,6 @@ if pipname == "ESSP":
     run_rassine = False
     overlap_correction = False
 
-#velocity step for common profile approx velocity step between two adjacent pixels. Must be constant (assumption in cvmt function).
-# if pipname == "DRS_2.3.5" or pipname == "DRS_3.7":
-#     vStep = 0.82
-# else:
-#     vStep = 0.7
-
 # By default, velocity step is derived empirically from the data, user can override
 auto_vStep = True
 
@@ -148,8 +145,6 @@ grid = {}
 #run code on max max_nr_of_specs spectra
 grid["max_nr_of_specs"]= [10000]
 #velocity grid width parameter (FWHM * velgridwidth)
-#dvel = np.round(vel_hwhm)*velgridwidth
-#vel = np.arange(systemrv-dvel, systemrv+dvel, vStep)
 grid["velgridwidth"] = [2.5,3.0,3.5,4.0]
 #remove data affected by tellurics deeper than telluric_cut (0.1 = depth of telluric line = 90% transmission)
 grid["telluric_cut"] = [0.2,0.1]
@@ -194,13 +189,15 @@ nr_of_combinations = 1
 for key in grid.keys():
     nr_of_combinations*=len(grid[key])
 
-assert use_n_time_series <= nr_of_combinations, "set use_n_time_series to value smaller than nr_of_combinations"
+assert use_n_time_series <= nr_of_combinations, "set use_n_time_series to value not larger than nr_of_combinations"
 
 
 #remove data point if flux < excllower
 #note that the spectra are between -1 and 0 (i.e. normalise to 1, then subtract 1)
 excllower = -1.1
 exclupper = 0.05
+
+#TODO: This should be an option to be set by the user
 usetapas = True
 
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
-
 
 import numpy as np
 import sys
@@ -30,9 +28,6 @@ plt.rcParams.update(
         "savefig.facecolor": "white",
     }
 )
-
-
-# In[ ]:
 
 
 # -------------------------------------------------------------
@@ -74,7 +69,7 @@ if preprocess:
 
     if preprocess_command_run != 0:
         print(
-            "Some error. Run this file independently or copy the relevant jupyter notebook to check."
+            "Some error. Run preprocess.py independently or copy the relevant jupyter notebook to check."
         )
 
 
@@ -98,17 +93,12 @@ if generate_grid:
         )
 
 
-# In[ ]:
-
-
 # -------------------------------------------------------------
 #           READ GRID
 # -------------------------------------------------------------
 
 parameter_grid = read_csv(stardir + "params.csv")
 
-
-# In[ ]:
 
 
 # -------------------------------------------------------------
@@ -148,8 +138,6 @@ rv_ccf_err = rv["rv_ccf_err"]
 mjd = rv["mjd"]
 
 
-# In[ ]:
-
 
 for key in rv.keys():
     if key in parameter_grid.index:
@@ -169,9 +157,6 @@ for key in rv.keys():
         plt.xlabel("vel [km/s]")
         plt.legend()
         break
-
-
-# In[ ]:
 
 
 # -------------------------------------------------------------
@@ -215,11 +200,6 @@ rv_err_selection_mean = np.mean(rv_err_mat[low_std_rvs, :], axis=0)
 
 
 
-# In[ ]:
-
-
-# In[ ]:
-
 
 # -------------------------------------------------------------
 #           PLOT RESULTS
@@ -253,9 +233,6 @@ plt.legend()
 plt.savefig(resdir + f"RV_time_series.pdf")
 
 
-# In[ ]:
-
-
 plt.figure(figsize=(10, 5))
 plt.title("RV RMS Histogram")
 
@@ -280,7 +257,6 @@ plt.legend()
 plt.savefig(resdir + f"RV_histogram.pdf")
 
 
-# In[ ]:
 
 
 results = DataFrame()
@@ -294,9 +270,6 @@ results["rv_ccf"] = rv_ccf
 results["rv_ccf_err"] = rv_ccf_err
 
 results.to_csv(resdir + f"RVs_{indic}.csv")
-
-
-# In[ ]:
 
 
 try:
@@ -322,7 +295,7 @@ try:
         palette=palette,
     )
     axes[0, 0].axhline(grid_results[measdrs].iloc[0], color="gray")
-    axes[0, 0].set_xlabel("$\mathbf{\Gamma}$", fontsize=14)
+    axes[0, 0].set_xlabel(r"$\mathbf{\Gamma}$", fontsize=14)
 
     colors = ["#8e44ad", "#9b59b6"]
     palette = sns.color_palette(colors)
@@ -337,7 +310,7 @@ try:
         palette=palette,
     )
     axes[0, 1].axhline(grid_results[measdrs].iloc[0], color="gray")
-    axes[0, 1].set_xlabel("$\mathbf{\Xi}$", fontsize=14)
+    axes[0, 1].set_xlabel(r"$\mathbf{\Xi}$", fontsize=14)
 
     colors = ["#f7dc6f", "#f8c471", "#f0b27a", "#e59866"]
     palette = sns.color_palette(colors)
@@ -352,7 +325,7 @@ try:
         palette=palette,
     )
     axes[1, 0].axhline(grid_results[measdrs].iloc[0], color="gray")
-    axes[1, 0].set_xlabel("$\mathbf{\Phi}$", fontsize=14)
+    axes[1, 0].set_xlabel(r"$\mathbf{\Phi}$", fontsize=14)
 
     colors = ["#2980b9", "#3498db", "#3498db"]
     palette = sns.color_palette(colors)
@@ -367,7 +340,7 @@ try:
         palette=palette,
     )
     axes[1, 1].axhline(grid_results[measdrs].iloc[0], color="gray")
-    axes[1, 1].set_xlabel("$\mathbf{\Theta}$", fontsize=14)
+    axes[1, 1].set_xlabel(r"$\mathbf{\Theta}$", fontsize=14)
 
     axes[0, 0].set_ylabel("")
     axes[0, 1].set_ylabel("")
@@ -389,8 +362,6 @@ except:
     pass
 
 
-# In[ ]:
-
 
 if preprocess:
     print("\npreprocessing:", ["done", "errors"][preprocess_command_run])
@@ -401,8 +372,3 @@ if run_on_grid:
 
 print(f"\nDone. Saved results in {resdir}")
 
-
-# In[ ]:
-
-
-# In[ ]:
