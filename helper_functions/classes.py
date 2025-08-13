@@ -50,8 +50,21 @@ def runLSD_inv(values, row_no, col_no, n, m, weights, fluxes):
 
     B = MtW.dot(csc_matrix(fluxes).transpose())
     # Z = spsolve(A, B, use_umfpack=True)
-    inverse = inv(csc_matrix(MtWM))
-    Z = inverse.dot(B)
+    csc_MtWM = csc_matrix(MtWM)
+    try:
+        inverse = inv(csc_MtWM)
+    # try:
+    #     inverse = inv(csc_MtWM)
+    # except RuntimeError:
+    #     return np.nan*np.ones(m), np.nan*np.ones_like(MtWM)
+
+        Z = inverse.dot(B)
+    except RuntimeError:
+        print(weights)
+        print(np.linalg.matrix_rank(csc_MtWM))
+        import pdb; pdb.set_trace()
+
+
     return np.asarray(Z.todense()).ravel(), np.sqrt(np.diag(inverse.todense()))
 
 
@@ -66,6 +79,7 @@ def overlaps(lams, lamlist, maxdist):
 
     # (lam1, lam2 ... lamn)
     # (lam1, lam2 ... lamn)
+    lams = lams[~np.isnan(lams)]
     lams_tile = np.tile(lams, (len(lamlist), 1))
 
     # (lamlist1, lamlist1 ... lamlist1)
@@ -76,10 +90,10 @@ def overlaps(lams, lamlist, maxdist):
 
     # lam_i overlaps with nr_of_overlaps[i] absorption lines in lamlist by less/equal maxdist
     if np.size(maxdist) == 1:
-        nr_of_overlaps = np.sum((dist_to_lamlistval < maxdist) * 1.0, axis=0)
+        nr_of_overlaps = np.nansum((dist_to_lamlistval < maxdist) * 1.0, axis=0)
     else:
         maxdist_tile = np.tile(maxdist, (len(lams), 1)).transpose()
-        nr_of_overlaps = np.sum((dist_to_lamlistval < maxdist_tile) * 1.0, axis=0)
+        nr_of_overlaps = np.nansum((dist_to_lamlistval < maxdist_tile) * 1.0, axis=0)
 
     return nr_of_overlaps
 
@@ -165,7 +179,7 @@ class stellar_parameters:
         info = pd.read_csv(self.dirdir + "Info.csv")
 
         rv_ccf = info["rv_ccf"][0]
-        bjd = info["bjd_ccf"][0]
+        # bjd = info["bjd_ccf"][0]
 
         # -----------------------------------------------------
         # plot absorption lines in VALD and spectrum in stellar rest frame
@@ -195,13 +209,15 @@ class stellar_parameters:
         plt.xlabel("Wavelength [\AA]", fontsize=15)
         plt.ylabel("Relative Intensity", fontsize=15)
         plt.legend(fontsize=15)
+        plt.show(block=False)
 
 
 class analyse:
-    def __init__(self, c, VALDlambdas, VALDdepths):
+    def __init__(self, c, VALDlambdas, VALDdepths, pipname):
         self.c = c
         self.VALDlambdas = VALDlambdas
         self.VALDdepths = VALDdepths
+        self.pipname = pipname
 
     def prep_spec(self, ii, datafile, erroption):
         """
@@ -224,22 +240,30 @@ class analyse:
         """
         # version of prep_spec3 (below) with less options and no q_map. just define wvl, spec, and weight matrices. (excluding deep tellurics, nans, and outliers)
         spectrum = np.copy(datafile["spectrum"][ii])
-        tps_tellurics = self.tapas_tellurics[ii]
+        if not self.pipname == "ESSP":
+            tps_tellurics = self.tapas_tellurics[ii]
 
-        spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
+            spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
 
-        wavelengths = np.copy(datafile["wavelengths"][ii])
-        if erroption == 0:
+            wavelengths = np.copy(datafile["wavelengths"][ii])
+            if erroption == 0:
+                weights = 1.0 / datafile["err"][ii] ** 2
+            if erroption == 1:
+                weights = 1.0 / datafile["err_envelope"][ii] ** 2
+
+            # CHANGED
+            weights[tps_tellurics < 0.9] = 0
+            spectrum[tps_tellurics == -1] = 0
+
+        else:
+            tps_tellurics = datafile["t_map"][ii]
+
+            wavelengths = np.copy(datafile["wavelengths"][ii])
             weights = 1.0 / datafile["err"][ii] ** 2
-        if erroption == 1:
-            weights = 1.0 / datafile["err_envelope"][ii] ** 2
 
-        # CHANGED
-        weights[tps_tellurics < 0.9] = 0
-        spectrum[tps_tellurics == -1] = 0
-
-        weights[np.isnan(spectrum)] = 0.0
-        spectrum[np.isnan(spectrum)] = 0.0
+            weights[tps_tellurics == 1] = 0
+            weights[np.isnan(spectrum)] = 0.0
+            spectrum[np.isnan(spectrum)] = 0.0
 
         weights[spectrum > self.exclupper] = 0
         weights[spectrum < self.excllower] = 0
@@ -280,18 +304,25 @@ class analyse:
         spectrum_o = self.spectrum[order, :]
         wavelengths_o = self.wavelengths[order, :]
         weights_o = self.weights[order, :]
+
+        selection = ~np.isnan(wavelengths_o)
+        spectrum_o = spectrum_o[selection]
+        wavelengths_o = wavelengths_o[selection]
+        weights_o = weights_o[selection]
+
+
         # value, row, column, reject = convolmat9.convolmat9(wavelengths_o, vel, self.VALDlambda,self.VALDdepths,np.zeros((len(self.VALDlambda))), 0,0,0,1.,vel[1]-vel[0])
         value, row, column = self.cvmt(
             wavelengths_o, vel, self.VALDlambdas, self.VALDdepths
         )
         # print(len(value),len(row),len(column))
         M = csc_matrix((value, (row, column)), shape=(len(wavelengths_o), len(vel)))
-
+        # import pdb ; pdb.set_trace()
         Z = runLSD(
             value, row, column, len(wavelengths_o), len(vel), weights_o, spectrum_o
         )
 
-        return Z, M.dot(Z)
+        return Z, M.dot(Z), selection
 
     def get_wide_lines(self):
         # exclude wide lines too (such as h alpha?)
@@ -356,28 +387,33 @@ class analyse:
 
             # define quality map. bad = 1
             q_map[order, exclude] = 1
+            # print(len(q_map[order, :][q_map[order, :] == 1]))
 
+        # print("=====================================")
         # also exclude wavelengths that are only sometimes visible due to barycentric motion (i.e. borders)
 
         bervmin = np.where(info_file["berv"] == info_file["berv"].min())[0][0]
         bervmax = np.where(info_file["berv"] == info_file["berv"].max())[0][0]
 
         for order in np.arange(self.nr_of_orders):
-            wvlmin = self.alldata["wavelengths"][bervmax][order][0]
-            wvlmax = self.alldata["wavelengths"][bervmin][order][-1]
+            wvlmin = np.nanmin(self.alldata["wavelengths"][bervmax][order])
+            wvlmax = np.nanmax(self.alldata["wavelengths"][bervmin][order])
             wo = np.where(
                 (self.wavelengths[order, :] > wvlmax)
                 | (self.wavelengths[order, :] < wvlmin)
             )[0]
             q_map[order, :][wo] = 1
+            # print(len(q_map[order, :][q_map[order, :] == 1]))
+
+        # print("=====================================")
 
         # only include fluxes where there is an accepted line and no line deeper than maxdepthparam
         for order in np.arange(self.nr_of_orders):
             wavelengths_o = self.wavelengths[order, :]
 
             inthisorder = np.where(
-                (self.VALDlambdas > wavelengths_o.min() - 3)
-                & (self.VALDlambdas < wavelengths_o.max() + 3)
+                (self.VALDlambdas > np.nanmin(wavelengths_o) - 3)
+                & (self.VALDlambdas < np.nanmax(wavelengths_o) + 3)
             )[0]
             VALDlambdas_here = self.VALDlambdas[inthisorder]
             VALDdepths_here = self.VALDdepths[inthisorder]
@@ -388,21 +424,24 @@ class analyse:
                 wavelengths_o,
                 VALDlambdas_here[VALDdepths_here > self.mindepthparam]
                 / self.barycentric_to_stellar_restframe[self.test_ii],
-                self.alldata["absline_halfwidth_include"] * np.mean(wavelengths_o),
+                self.alldata["absline_halfwidth_include"] * np.nanmean(wavelengths_o),
             )
 
             overlap2 = overlaps(
                 wavelengths_o,
                 VALDlambdas_here[VALDdepths_here > self.maxdepthparam]
                 / self.barycentric_to_stellar_restframe[self.test_ii],
-                self.alldata["absline_halfwidth_include"] * np.mean(wavelengths_o),
+                self.alldata["absline_halfwidth_include"] * np.nanmean(wavelengths_o),
             )
 
             nonselection = np.where(~((overlap2 == 0) & (overlap >= 1)))[0]
 
+            import pdb
+
+            # pdb.set_trace()
             q_map[order, nonselection] = 1
             self.q_map = q_map
-
+            # print(len(q_map[order, :][q_map[order, :] == 1]))
             # add quality map to alldata dictionary
             self.alldata["q_map"] = {}
 
@@ -703,7 +742,7 @@ class analyse:
 # -------------------------------------------------------------
 
 
-def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas):
+def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
     """
     Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
     Parameters
@@ -735,54 +774,60 @@ def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas):
 
     # choose weighting scheme
 
-    if erroption == 0:
-        weights = 1.0 / datafile["err"][ii] ** 2
+    if not pipname == "ESSP":
+        if erroption == 0:
+            weights = 1.0 / datafile["err"][ii] ** 2
 
-    if erroption == 1:
-        weights = 1.0 / datafile["err_envelope"][ii] ** 2
+        if erroption == 1:
+            weights = 1.0 / datafile["err_envelope"][ii] ** 2
 
-    if erroption == 2:
-        err = np.transpose(
-            np.tile(
-                np.median(alldata["err"][ii], axis=1),
-                (np.shape(alldata["err"][0])[1], 1),
+        if erroption == 2:
+            err = np.transpose(
+                np.tile(
+                    np.nanmedian(datafile["err"][ii], axis=1),
+                    (np.shape(datafile["err"][0])[1], 1),
+                )
             )
-        )
-        weights = 1.0 / err**2
+            weights = 1.0 / err**2
 
-    # -----------------------------------------------------
+        # -----------------------------------------------------
 
-    # divide by telluric transmission spectrum
+        # divide by telluric transmission spectrum
 
-    tps_tellurics = tapas_tellurics[ii]
+        tps_tellurics = tapas_tellurics[ii]
 
-    if usetapas:
-        spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
+        if usetapas:
+            spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
 
-    # set weight of data impacted by tellurics to 0
+        # set weight of data impacted by tellurics to 0
 
-    weights[datafile["t_map"][ii] == 1] = 0
-    # set spectrum to 0 here (divided by tellurics before). source of potential errors. better set to 0.
-    spectrum[tps_tellurics == -1] = 0
+        weights[datafile["t_map"][ii] == 1] = 0
+        # set spectrum to 0 here (divided by tellurics before). source of potential errors. better set to 0.
+        spectrum[tps_tellurics == -1] = 0
+    else:
+        weights = 1.0 / datafile["err"][ii] ** 2
+        weights[datafile["t_map"][ii] == 1] = 0
+        # print(weights.sum())
 
     # set weights to 0 where data impacted by wide lines or model and data do not agree well (additivity etc.)
 
     weights[datafile["q_map"][ii] == 1] = 0
+    # print(weights.sum())
     # -----------------------------------------------------
     # exclude nans
     weights[np.isnan(spectrum)] = 0.0
     spectrum[np.isnan(weights)] = 0.0
     weights[np.isnan(weights)] = 0.0
     spectrum[np.isnan(spectrum)] = 0.0
-
+    # print(weights.sum())
     spectrum[np.isinf(weights)] = 0.0
     weights[np.isinf(weights)] = 0.0
-
+    # print(weights.sum())
     weights[datafile["err"][ii] < 0] = 0
     # exclude upper outliers
     weights[spectrum > 0.05] = 0
     weights[spectrum <= -1.0] = 0
-
+    # print(weights.sum())
     # -----------------------------------------------------
     return weights, spectrum, wavelengths
 
@@ -808,7 +853,7 @@ def extract_rv_from_common_profiles(
     Zerrs = []
 
     for ii in epoch_list:
-
+        print(ii)
         # ----------------------------------------------------------
         # testing weighting (and normalising) the common profiles of the different orders before addition
 
@@ -872,17 +917,19 @@ def extract_rv_from_common_profiles(
         try:
             if alldata["fitfunction"] == "Gaussian":
                 if use_uncertainties:
-                    popt, pcov = curve_fit(
+                    popt, pcov, info_dict, mesg, ier = curve_fit(
                         Gaussian,
                         vel[wo],
                         Z[wo],
                         [-1, mean, sigma_guess, 0],
                         sigma=common_profile_err[wo],
+                        full_output=True,
                     )
                 else:
-                    popt, pcov = curve_fit(
-                        Gaussian, vel[wo], Z[wo], [-1, mean, sigma_guess, 0]
+                    popt, pcov, info_dict, mesg, ier  = curve_fit(
+                        Gaussian, vel[wo], Z[wo], [-1, mean, sigma_guess, 0], full_output=True
                     )
+                
 
         except Exception as e:
             print(e)

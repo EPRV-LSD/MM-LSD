@@ -8,6 +8,7 @@ import numpy as np
 import sys
 import subprocess
 import os
+import pandas as pd
 from pandas import read_csv
 import pickle
 import matplotlib.pyplot as plt
@@ -58,9 +59,6 @@ if not os.path.isfile(inf_name):
 exec(open(inf_name).read())
 
 
-# In[ ]:
-
-
 # -------------------------------------------------------------
 #           PREPROCESS SPECTRA AND SAVE RESULTS
 # -------------------------------------------------------------
@@ -80,10 +78,6 @@ if preprocess:
         )
 
 
-# In[ ]:
-
-
-# In[ ]:
 
 
 # -------------------------------------------------------------
@@ -130,9 +124,6 @@ if run_on_grid:
         if command_run != 0:
             break
             print("Some error here.")
-
-
-# In[ ]:
 
 
 # -------------------------------------------------------------
@@ -210,9 +201,18 @@ print(f"selected {len(low_std_rvs)} time series")
 rv_all_mean = np.mean(rv_mat, axis=0)
 rv_err_all_mean = np.mean(rv_err_mat, axis=0)
 
+df = pd.DataFrame({})
+df['mjd'] = mjd
+for i in range(rv_mat.shape[0]):
+    df[f'rv_{i}'] = rv_mat[i,:]
+    df[f'rv_err_{i}'] = rv_err_mat[i,:]
+df.to_csv(resdir+f"all_rvs.csv")
+
 # mean-combine use_n_time_series RV time series with lowest RMS
 rv_selection_mean = np.mean(rv_mat[low_std_rvs, :], axis=0)
 rv_err_selection_mean = np.mean(rv_err_mat[low_std_rvs, :], axis=0)
+
+
 
 
 # In[ ]:
