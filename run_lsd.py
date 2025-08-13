@@ -860,8 +860,7 @@ if output_intermediate_results:
 yerr_wls = np.zeros((len(lsd_norm)))
 for count, ii in enumerate(np.asarray(iis)[no_outliers]):
     rverrc = RVerror(vel, Zs[ii], Zerrs[ii])
-    if not pipname == "ESSP":
-        yerr_wls[count] = rverrc * 1000.0
+    yerr_wls[count] = rverrc * 1000.0
 
 newres["LSD RV std"] = [np.std(lsd_norm).round(3)]
 newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
