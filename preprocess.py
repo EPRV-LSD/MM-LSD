@@ -518,7 +518,7 @@ if save_spectra_as_pkl and pipname == "DRS_3.7":
 
             for ii in range(d + 1):
                 aj = hdul[0].header["TNG DRS CAL TH COEFF LL" + str(jj(o, d, ii))]
-                lm[o] += aj * xx ** ii
+                lm[o] += aj * xx**ii
             # lm[o] = lm[o]
 
         return lm

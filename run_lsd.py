@@ -147,9 +147,6 @@ for key in prms.keys():
 
 # ### Information about spectra
 
-# In[7]:
-
-
 info_file = read_csv(dirdir + "Info.csv")
 
 # set system RV. i.e. RV that is used to convert absorption line wavelengths from rest frame to stellar frame
@@ -644,7 +641,7 @@ for weight_scheme in weight_schemes:
 
         # this extracts the RV information
         lsd_rv_orig, Zs, Z, Zerrs = extract_rv_from_common_profiles(
-            LSD_results,
+            LSD_res§ults,
             an.alldata,
             iis,
             order_choice,
