@@ -171,7 +171,7 @@ def worker3(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
 
     # Only include data with weight > 0
     selection = np.where((weights[order, :] > 0) & (~np.isnan(wavelengths[order, :])))[0]
-    spectrum_o = spectrum[order, :]
+    spectrum_o = spectrum[order, :][selection]
 
     # Don't run if only 2% of order included. Bad order.
     # Change to 10 per cent of order included?
@@ -277,12 +277,6 @@ from classes import (
     prep_spec3,
     RVerror,
 )
-
-
-# ### Set parameters for computation (velcity grid width etc.)
-#
-
-# In[6]:
 
 
 if injupyternotebook:

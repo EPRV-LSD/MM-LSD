@@ -1,0 +1,766 @@
+diff --git a/run_lsd.py b/run_lsd.py
+index 0d6d55e..da6cea1 100644
+--- a/run_lsd.py
++++ b/run_lsd.py
+@@ -25,179 +25,6 @@ from multiprocessing import Pool, get_context
+ from functools import partial
+ import pickle
+ 
+-
+-from scipy.sparse import csc_matrix
+-from scipy.sparse.linalg import inv, spsolve
+-from scipy.interpolate import interp1d, LSQUnivariateSpline
+-from scipy.optimize import curve_fit
+-from scipy.signal import savgol_filter
+-
+-
+-def runLSD(values, row_no, col_no, n, m, weights, fluxes):
+-    # MATRIX CALCULATIONS USING 'csc_matrix' TO IMPROVE EFFICIENCY
+-    # The uncertainties are not computed here (necessitates inverting the MtWM matrix
+-
+-    # See Lienhard et al. 2022 eq. 4
+-
+-    M = csc_matrix((values, (row_no, col_no)), shape=(n, m))
+-    Mt = M.transpose()
+-    MtW = Mt.dot(csc_matrix((weights, (np.arange(n), np.arange(n))), shape=(n, n)))
+-    MtWM = MtW.dot(M)
+-
+-    A = MtWM
+-
+-    B = MtW.dot(csc_matrix(fluxes).transpose())
+-
+-    return spsolve(A, B, use_umfpack=True)
+-
+-
+-
+-def get_vstep(wlen):
+-    # get velocity step from wavelength array
+-    diffs = np.diff(wlen, prepend=np.nan)
+-    vel_space = 3e5 * diffs/wlen
+-
+-    vel_space = np.nanmedian(vel_space)
+-    vel_space = np.round(vel_space, decimals=2)
+-
+-    return vel_space
+-
+-def worker3_new(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
+-    """
+-    For given order: perform LSD and extract the common profile, common profile uncertainties. Compute convolution model
+-    Parameters
+-    ----------
+-    order : int
+-        First array: periods [d]
+-    weights : array orders x pixels
+-        Weights of the individual fluxes
+-    spectrum : array orders x pixels
+-        Fluxes
+-    wavelengths : array orders x pixels
+-        Wavelength corresponding to the fluxes
+-    vlambda : array
+-        Central wavelength of absorption lines (VALD3)
+-    vdepth : array
+-        Depth of absorption lines (VALD3)
+-    vel : array
+-        Velocity grid to run LSD on (velocity grid for common profile)
+-
+-    Output:
+-    ----------
+-    Z : array
+-        common profile
+-    Zerr : array
+-        uncertainty estimates of common profile
+-    M.dot(Z) : array
+-        convolution model
+-    selection : array
+-        indices of included pixels
+-    """
+-
+-    # Get data of given order
+-
+-    # Only include data with weight > 0
+-    # Also omit pixels with wavelengths as nans
+-    selection = np.where((weights[order, :] > 0) & (~np.isnan(wavelengths[order, :])))[
+-        0
+-    ]
+-    spectrum_o = spectrum[order, :][selection]
+-
+-    # Don't run if only 2% of order included. Bad order.
+-    if len(selection) < 0.02 * len(spectrum):
+-        return 0
+-
+-    wavelengths_o = wavelengths[order, :][selection]
+-    weights_o = weights[order, :][selection]
+-    # import pdb; pdb.set_trace()
+-    # CREATE CONVOLUTION MATRIX
+-    # -----------------------------------------------------
+-    try:
+-        value, row, column = an.cvmt(wavelengths_o, vel, vlambda, vdepth)
+-        M = csc_matrix((value, (row, column)), shape=(len(wavelengths_o), len(vel)))
+-        # raise ValueError
+-    except ValueError:
+-        import pdb
+-
+-        pdb.set_trace()
+-    # -----------------------------------------------------
+-
+-    try:
+-        Z, Zerr = runLSD_inv(
+-            value, row, column, len(wavelengths_o), len(vel), weights_o, spectrum_o
+-        )
+-    except RuntimeError:
+-
+-        # Z = np.ones_like(vel)
+-        # Zerr = np.ones_like(vel) * 1e10
+-        return 0
+-
+-    return Z, Zerr, M.dot(Z), selection
+-
+-
+-def worker3(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
+-    """
+-    For given order: perform LSD and extract the common profile, common profile uncertainties. Compute convolution model
+-    Parameters
+-    ----------
+-    order : int
+-        First array: periods [d]
+-    weights : array orders x pixels
+-        Weights of the individual fluxes
+-    spectrum : array orders x pixels
+-        Fluxes
+-    wavelengths : array orders x pixels
+-        Wavelength corresponding to the fluxes
+-    vlambda : array
+-        Central wavelength of absorption lines (VALD3)
+-    vdepth : array
+-        Depth of absorption lines (VALD3)
+-    vel : array
+-        Velocity grid to run LSD on (velocity grid for common profile)
+-
+-    Output:
+-    ----------
+-    Z : array
+-        common profile
+-    Zerr : array
+-        uncertainty estimates of common profile
+-    M.dot(Z) : array
+-        convolution model
+-    selection : array
+-        indices of included pixels
+-    """
+-
+-    # Get data of given order
+-
+-    # Only include data with weight > 0
+-    selection = np.where((weights[order, :] > 0) & (~np.isnan(wavelengths[order, :])))[0]
+-    spectrum_o = spectrum[order, :]
+-
+-    # Don't run if only 2% of order included. Bad order.
+-    # Change to 10 per cent of order included?
+-    if len(selection) < 0.1 * len(spectrum_o):
+-        return 0
+-
+-    spectrum_o = spectrum[order, :][selection]
+-    wavelengths_o = wavelengths[order, :][selection]
+-    weights_o = weights[order, :][selection]
+-
+-    # CREATE CONVOLUTION MATRIX
+-    # -----------------------------------------------------
+-    value, row, column = an.cvmt(wavelengths_o, vel, vlambda, vdepth)
+-    M = csc_matrix((value, (row, column)), shape=(len(wavelengths_o), len(vel)))
+-    # -----------------------------------------------------
+-    try:
+-        Z, Zerr = runLSD_inv(
+-            value, row, column, len(wavelengths_o), len(vel), weights_o, spectrum_o
+-        )
+-    except:
+-        import pdb; pdb.set_trace()
+-    
+-    return Z, Zerr, M.dot(Z), selection
+-
+-
+-
+ t00 = time()
+ 
+ try:
+@@ -229,8 +56,6 @@ except:
+ 
+ # In[3]:
+ 
+-injupyternotebook = False
+-
+ 
+ if not injupyternotebook:
+     # star name
+@@ -252,7 +77,6 @@ else:
+ 
+     output_intermediate_results = True
+ 
+-output_intermediate_results = False
+ 
+ # In[4]:
+ 
+@@ -326,16 +150,15 @@ for key in prms.keys():
+ info_file = read_csv(dirdir + "Info.csv")
+ 
+ # set system RV. i.e. RV that is used to convert absorption line wavelengths from rest frame to stellar frame
+-if pipname == "ESSP":
+-    # systemrv = 83
+-    systemrv = info_file["rv_ccf"][0] / 1000.0
+-else:
+-    systemrv = info_file["rv_ccf"][0]
++systemrv = info_file["rv_ccf"][0]
+ 
+ 
+ # ### Load data from VALD3
+ #
+ 
++# In[8]:
++
++
+ valddir = "./VALD_files/"
+ sp = stellar_parameters(star, valddir, dirdir, pipname, c)
+ sp.VALD_data()
+@@ -347,7 +170,7 @@ sp.VALD_data()
+ # In[9]:
+ 
+ 
+-an = analyse(c, sp.VALDlambdas, sp.VALDdepths, pipname)
++an = analyse(c, sp.VALDlambdas, sp.VALDdepths)
+ 
+ 
+ # In[10]:
+@@ -356,36 +179,18 @@ an = analyse(c, sp.VALDlambdas, sp.VALDdepths, pipname)
+ with open(dirdir + "data_dict.pkl", "rb") as f:
+     prov = pickle.load(f)
+     an.alldata = {}
+-    if not overlap_correction:
+-        an.alldata["spectrum"] = prov["spectrum"]
+-        an.alldata["err"] = prov["err"]
+-        an.alldata["err_envelope"] = np.zeros_like(prov["err"])
+-        an.alldata["wavelengths"] = prov["wavelengths"]
+-    elif rassoption == 1:
++    if rassoption == 1:
+         an.alldata["spectrum"] = prov["spectrum_overlap_corrected"]
+         an.alldata["err"] = prov["err_overlap_corrected"]
+         an.alldata["err_envelope"] = prov["err_envelope_overlap_corrected"]
+         an.alldata["wavelengths"] = prov["wavelengths"]
+-
+-    if pipname == "ESSP":
+-        an.alldata["t_map"] = prov["t_map"]
+-    
+-
+-    
+-
+     del prov
+ 
+ 
++# In[11]:
+ 
+ 
+-test_ii = 0
+-test_wlen = an.alldata["wavelengths"][test_ii]
+-test_spec = an.alldata["spectrum"][test_ii]
+-
+-if auto_vStep:
+-    vStep = get_vstep(test_wlen)
+-else:
+-    vStep = manual_vStep
++# save these for later.
+ 
+ iis = list(an.alldata["spectrum"].keys())
+ 
+@@ -442,37 +247,36 @@ if output_intermediate_results:
+ 
+ # In[14]:
+ 
+-if pipname != "ESSP":
+ 
+-    compute_tellurics = True
++compute_tellurics = True
+ 
+-    if os.path.exists("./tellurics/tellurics" + star + ".pkl"):
+-        with open("./tellurics/tellurics" + star + ".pkl", "rb") as f:
+-            an.tapas_tellurics = pickle.load(f)
++if os.path.exists("./tellurics/tellurics" + star + ".pkl"):
++    with open("./tellurics/tellurics" + star + ".pkl", "rb") as f:
++        an.tapas_tellurics = pickle.load(f)
+ 
+-        if len(iis) == len(an.tapas_tellurics.keys()):
+-            compute_tellurics = False
+-            if output_intermediate_results:
+-                print(f"loaded tellurics from ./tellurics/tellurics" + star + ".pkl")
+-        else:
+-            compute_tellurics = True
++    if len(iis) == len(an.tapas_tellurics.keys()):
++        compute_tellurics = False
++        if output_intermediate_results:
++            print(f"loaded tellurics from ./tellurics/tellurics" + star + ".pkl")
++    else:
++        compute_tellurics = True
+ 
+-    if compute_tellurics:
+-        print("produce tellurics")
+ 
+-        transmittance_file = None
+-        an.get_tapas_transmittance(pipname, transmittance_file, info_file)
+-        print("save tellurics in ", "./tellurics/tellurics" + star + ".pkl")
+-        with open("./tellurics/tellurics" + star + ".pkl", "wb") as f:
+-            pickle.dump(an.tapas_tellurics, f)
++if compute_tellurics:
++    print("produce tellurics")
+ 
+-else:
++    transmittance_file = None
++    an.get_tapas_transmittance(pipname, transmittance_file, info_file)
++    print("save tellurics in ", "./tellurics/tellurics" + star + ".pkl")
++    with open("./tellurics/tellurics" + star + ".pkl", "wb") as f:
++        pickle.dump(an.tapas_tellurics, f)
+ 
+-    pass
+ 
+ # ### Set preliminary velocity grid
+ #
+ 
++# In[15]:
++
+ 
+ # set velocity grid
+ 
+@@ -484,12 +288,13 @@ vel_inital = np.arange(systemrv - dvel, systemrv + dvel, vStep)
+ an.alldata["vel_inital"] = vel_inital
+ 
+ 
+-#  FIRST RUN OF LSD (TO GET FWHM OF SPECTRA, FIRST COMMON PROFILE,
+-# AND TO CHECK DEVIATION OF SPECTRA FROM CONVOLUTION MODEL))
++# ### FIRST RUN OF LSD (TO GET FWHM OF SPECTRA, FIRST COMMON PROFILE, AND TO CHECK DEVIATION OF SPECTRA FROM CONVOLUTION MODEL))
++
++# In[16]:
+ 
+ 
+ # choose test spectrum for the first LSD run
+-test_ii = 1
++test_ii = 0
+ 
+ an.test_ii = test_ii
+ 
+@@ -507,12 +312,7 @@ count = 0
+ for order in testorders:
+     output = an.worker(order, vel_inital)
+     if not np.isnan(output[0]).any():
+-        model_o = np.nan * np.ones_like(output[2])
+-
+-        # import pdb; pdb.set_trace()
+-        model_o[output[2]] = output[1]
+-        # model_h[order, :] = output[1]
+-        model_h[order, :] = model_o
++        model_h[order, :] = output[1]
+         zlast += output[0]
+         count += 1
+ zlast /= count
+@@ -521,6 +321,9 @@ an.model_h = model_h
+ an.div = np.abs(model_h - an.spectrum)
+ 
+ 
++# In[17]:
++
++
+ # first common profile
+ 
+ # fit gaussian to common profile and extraxt hwhm
+@@ -546,6 +349,8 @@ an.alldata["initial_v_halfwidth"] = vel_hwhm
+ 
+ # ### Set velocity grid
+ 
++# In[18]:
++
+ 
+ # new velocity grid based on first run.
+ 
+@@ -561,20 +366,88 @@ an.alldata["absline_halfwidth_include"] = (vel.max() - vel.min() + 1.0) / 2.0 /
+ 
+ # ### EXCLUDE SPECTRAL REGIONS WITH HIGH MODEL-SPECTRUM DEVIATION
+ 
++# In[19]:
++
+ 
+ an.get_wide_lines()
+ an.get_q_map(info_file)
+ # get telluric map.
++an.get_t_map()
+ 
+-if not pipname == "ESSP":
+-    an.get_t_map()
+ 
+-if paramnr == 0:
++# In[20]:
++
++
++if output_intermediate_results and False:
+     an.show_map()
+ 
+ 
+ # ### RUN LSD ON ALL SPECTRA WITH QUALITY/TELLURIC MAP
+ 
++# In[21]:
++
++
++def worker3(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
++    """
++    For given order: perform LSD and extract the common profile, common profile uncertainties. Compute convolution model
++    Parameters
++    ----------
++    order : int
++        First array: periods [d]
++    weights : array orders x pixels
++        Weights of the individual fluxes
++    spectrum : array orders x pixels
++        Fluxes
++    wavelengths : array orders x pixels
++        Wavelength corresponding to the fluxes
++    vlambda : array
++        Central wavelength of absorption lines (VALD3)
++    vdepth : array
++        Depth of absorption lines (VALD3)
++    vel : array
++        Velocity grid to run LSD on (velocity grid for common profile)
++
++    Output:
++    ----------
++    Z : array
++        common profile
++    Zerr : array
++        uncertainty estimates of common profile
++    M.dot(Z) : array
++        convolution model
++    selection : array
++        indices of included pixels
++    """
++
++    # Get data of given order
++
++    # Only include data with weight > 0
++    selection = np.where(weights[order, :] > 0)[0]
++    spectrum_o = spectrum[order, :][selection]
++
++    # Don't run if only 2% of order included. Bad order.
++    if len(selection) < 0.02 * len(spectrum_o):
++        return 0
++
++    wavelengths_o = wavelengths[order, :][selection]
++    weights_o = weights[order, :][selection]
++
++    # CREATE CONVOLUTION MATRIX
++    # -----------------------------------------------------
++    value, row, column = an.cvmt(wavelengths_o, vel, vlambda, vdepth)
++
++    M = csc_matrix((value, (row, column)), shape=(len(wavelengths_o), len(vel)))
++    # -----------------------------------------------------
++
++    Z, Zerr = runLSD_inv(
++        value, row, column, len(wavelengths_o), len(vel), weights_o, spectrum_o
++    )
++
++    return Z, Zerr, M.dot(Z), selection
++
++
++# In[22]:
++
+ 
+ # multiprocessing
+ num_processors = 4
+@@ -588,6 +461,9 @@ LSD_results = {}
+ vel = an.alldata["vel"]
+ 
+ 
++# In[23]:
++
++
+ t_start = time()
+ 
+ for ii in iis:
+@@ -596,12 +472,7 @@ for ii in iis:
+ 
+     # get weights, spectrum, wavelengths after excluding some data according to parameters.
+     weights, spectrum, wavelengths = prep_spec3(
+-        an.alldata,
+-        ii,
+-        an.tapas_tellurics,
+-        erroption=erroption,
+-        usetapas=usetapas,
+-        pipname=pipname,
++        an.alldata, ii, an.tapas_tellurics, erroption=erroption, usetapas=usetapas
+     )
+ 
+     # empty containers
+@@ -621,15 +492,11 @@ for ii in iis:
+         vdepth=sp.VALDdepths,
+         vel=vel,
+     )
++
+     # initialise multiprocessing
+-    num_processors = 1
+-    if num_processors > 1:
+-        with get_context("fork").Pool(processes=num_processors) as p:
+-            output = p.map(worker_partial3, [order for order in testorders])
+-    else:
+-        output = []
+-        for order in testorders:
+-            output.append(worker_partial3(order))
++    with get_context("fork").Pool(processes=num_processors) as p:
++        output = p.map(worker_partial3, [order for order in testorders])
++
+     # save output into containers
+     for order in testorders:
+         if output[order] != 0:
+@@ -649,6 +516,9 @@ if injupyternotebook:
+     print("Computation time:", np.round((time() - t_start) / 60.0, 1), "minutes")
+ 
+ 
++# In[24]:
++
++
+ # inspect the individual common profiles
+ if output_intermediate_results:
+ 
+@@ -756,65 +626,58 @@ if len(iis) != len(no_outliers):
+ 
+ 
+ # compare LSD results to DRS CCF method
+-if pipname == "ESSP":
+-    drs_rv_orig = info_file["rv_ccf"].values
+-else:
+-    drs_rv_orig = info_file["rv_ccf"].values * 1000.0
++drs_rv_orig = info_file["rv_ccf"].values * 1000.0
+ t = info_file["mjd"].values
+ 
+ 
+ for weight_scheme in weight_schemes:
+-    use_uncertainties = True
+-    # only second one is used for plots later on
+-
+-    # "flux weight2b": weight of order o same for all spectra (=weight of order o in first spectrum)
+-    # "flux weight2c": weight of order o varies (depending on weight of fluxes in order o in spectrum ii)
+-
+-    # choose an LSD container
+-
+-    # this extracts the RV information
+-    lsd_rv_orig, Zs, Z, Zerrs = extract_rv_from_common_profiles(
+-        LSD_results,
+-        an.alldata,
+-        iis,
+-        order_choice,
+-        weight_orders=weight_scheme,
+-        use_uncertainties=use_uncertainties,
+-    )
+-
+-    if pipname == "DRS_3.7":
+-        # drift correction
+-        lsd_rv_orig -= info_file["drift"].values
+-        # drs_rv_orig -= info_file["drift"].values
+-
+-    # subtract median radial velocity to analyse rv change
+-    drs_norm = drs_rv_orig - np.median(drs_rv_orig)
+-    lsd_norm = lsd_rv_orig - np.median(lsd_rv_orig)
++    for use_uncertainties in [True]:
++        # only second one is used for plots later on
++
++        # "flux weight2b": weight of order o same for all spectra (=weight of order o in first spectrum)
++        # "flux weight2c": weight of order o varies (depending on weight of fluxes in order o in spectrum ii)
++
++        # choose an LSD container
++
++        # this extracts the RV information
++        lsd_rv_orig, Zs, Z, Zerrs = extract_rv_from_common_profiles(
++            LSD_res§ults,
++            an.alldata,
++            iis,
++            order_choice,
++            weight_orders=weight_scheme,
++            use_uncertainties=use_uncertainties,
++        )
+ 
+-    # ------------------------
+-    # remove outliers
+-    no_outliers = np.where(np.abs(drs_norm - np.median(drs_norm)) < 200)[0]
++        if pipname == "DRS_3.7":
++            # drift correction
++            lsd_rv_orig -= info_file["drift"].values
++            # drs_rv_orig -= info_file["drift"].values
+ 
+-    if len(no_outliers) < len(drs_norm):
++        # subtract median radial velocity to analyse rv change
++        drs_norm = drs_rv_orig - np.median(drs_rv_orig)
++        lsd_norm = lsd_rv_orig - np.median(lsd_rv_orig)
+ 
+-        import pdb
++        # ------------------------
++        # remove outliers
++        no_outliers = np.where(np.abs(drs_norm - np.median(drs_norm)) < 200)[0]
+ 
+-        pdb.set_trace()
+-        print(f"Removed {len(drs_norm)-len(no_outliers)} outliers.")
++        if len(no_outliers) < len(drs_norm):
++            print(f"Removed {len(drs_norm)-len(no_outliers)} outliers.")
+ 
+-    drs_norm = drs_norm[no_outliers]
+-    lsd_norm = lsd_norm[no_outliers]
++        drs_norm = drs_norm[no_outliers]
++        lsd_norm = lsd_norm[no_outliers]
+ 
+-    t = t[no_outliers]
++        t = t[no_outliers]
+ 
+-    # yerr = np.asarray(list(an.alldata["ccfrvs_err"].values()))[no_outliers]*1000.
+-    yerr = info_file["rv_ccf_error"].values[no_outliers] * 1000.0
++        # yerr = np.asarray(list(an.alldata["ccfrvs_err"].values()))[no_outliers]*1000.
++        yerr = info_file["rv_ccf_error"].values[no_outliers] * 1000.0
+ 
+-    # ------------------------
++        # ------------------------
+ 
+-    difference = drs_norm - lsd_norm
++        difference = drs_norm - lsd_norm
+ 
+-    print("LSD RMS: ", np.std(lsd_norm).round(2), "m/s")
++        print("LSD RMS: ", np.std(lsd_norm).round(2), "m/s")
+ 
+ 
+ # In[43]:
+@@ -856,74 +719,74 @@ if output_intermediate_results:
+ 
+ 
+ # save results
++if not injupyternotebook:
++    yerr_wls = np.zeros((len(lsd_norm)))
++    for count, ii in enumerate(np.asarray(iis)[no_outliers]):
++        rverrc = RVerror(vel, Zs[ii], Zerrs[ii])
++        yerr_wls[count] = rverrc * 1000.0
++
++    newres["LSD RV std"] = [np.std(lsd_norm).round(3)]
++    newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
++    newres["DRS RV std"] = [np.std(drs_norm).round(3)]
++    newres["DRS RV MAD"] = [median_abs_deviation(drs_norm).round(3)]
++    newres["sigmafit_used"] = [an.alldata["sigmafit_used"].round(3)]
++    newres["comp time"] = [np.round(time() - t00, 1)]
++
++    nn = concat([results, newres])
++    nn.to_csv(resfile, index=False)
++
++    if os.path.exists(rvresfile):
++        f = open(rvresfile, "rb")
++        dth = pickle.load(f)
++        dth[paramnr] = lsd_norm
++        f.close()
++    else:
++        f = open(rvresfile, "wb")
++        dth = {}
++        dth["mjd"] = t
++        dth["rv_ccf"] = drs_norm
++        dth["rv_ccf_err"] = yerr
++
++        dth[paramnr] = lsd_norm
+ 
+-yerr_wls = np.zeros((len(lsd_norm)))
+-for count, ii in enumerate(np.asarray(iis)[no_outliers]):
+-    rverrc = RVerror(vel, Zs[ii], Zerrs[ii])
+-    yerr_wls[count] = rverrc * 1000.0
+-
+-newres["LSD RV std"] = [np.std(lsd_norm).round(3)]
+-newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
+-newres["DRS RV std"] = [np.std(drs_norm).round(3)]
+-newres["DRS RV MAD"] = [median_abs_deviation(drs_norm).round(3)]
+-newres["sigmafit_used"] = [an.alldata["sigmafit_used"].round(3)]
+-newres["comp time"] = [np.round(time() - t00, 1)]
+-
+-nn = concat([results, newres])
+-nn.to_csv(resfile, index=False)
+-import time
+-
+-print("Results saved in ", resfile)
+-# time.sleep(4)
+-if os.path.exists(rvresfile):
+-    f = open(rvresfile, "rb")
+-    dth = pickle.load(f)
+-    dth[paramnr] = lsd_norm
+-    f.close()
+-else:
+     f = open(rvresfile, "wb")
+-    dth = {}
+-    dth["mjd"] = t
+-    dth["rv_ccf"] = drs_norm
+-    dth["rv_ccf_err"] = yerr
++    pickle.dump(dth, f)
++    f.close()
+ 
+-    dth[paramnr] = lsd_norm
++    if os.path.exists(rverrresfile):
++        f = open(rverrresfile, "rb")
++        dth = pickle.load(f)
++        dth[paramnr] = yerr_wls
++        f.close()
++    else:
++        f = open(rverrresfile, "wb")
++        dth = {}
++        dth["mjd"] = t
++        dth["rv_ccf"] = drs_norm
++        dth["rv_ccf_err"] = yerr
+ 
+-f = open(rvresfile, "wb")
+-pickle.dump(dth, f)
+-f.close()
++        dth[paramnr] = yerr_wls
+ 
+-if os.path.exists(rverrresfile):
+-    f = open(rverrresfile, "rb")
+-    dth = pickle.load(f)
+-    dth[paramnr] = yerr_wls
+-    f.close()
+-else:
+     f = open(rverrresfile, "wb")
+-    dth = {}
+-    dth["mjd"] = t
+-    dth["rv_ccf"] = drs_norm
+-    dth["rv_ccf_err"] = yerr
+-
+-    dth[paramnr] = yerr_wls
+-
+-f = open(rverrresfile, "wb")
+-pickle.dump(dth, f)
+-f.close()
+-
+-if os.path.exists(commonprofilefile):
+-    f = open(commonprofilefile, "rb")
+-    dth = pickle.load(f)
+-    dth[f"vel_{paramnr}"] = vel
+-    dth[f"Z_{paramnr}"] = Zs
++    pickle.dump(dth, f)
+     f.close()
+-else:
++
++    if os.path.exists(commonprofilefile):
++        f = open(commonprofilefile, "rb")
++        dth = pickle.load(f)
++        dth[f"vel_{paramnr}"] = vel
++        dth[f"Z_{paramnr}"] = Zs
++        f.close()
++    else:
++        f = open(commonprofilefile, "wb")
++        dth = {}
++        dth["mjd"] = t
++        dth[f"vel_{paramnr}"] = vel
++        dth[f"Z_{paramnr}"] = Zs
++
+     f = open(commonprofilefile, "wb")
+-    dth = {}
+-    dth["mjd"] = t
+-    dth[f"vel_{paramnr}"] = vel
+-    dth[f"Z_{paramnr}"] = Zs
+-
+-f = open(commonprofilefile, "wb")
+-pickle.dump(dth, f)
+-f.close()
++    pickle.dump(dth, f)
++    f.close()
++
++
++# In[ ]:

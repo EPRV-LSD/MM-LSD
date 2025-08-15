@@ -20,7 +20,7 @@ star = "Sun"
 from datetime import date
 today = date.today()
 #indic = str(today.year)+str(today.month)+str(today.day)
-indic = "2"
+indic = "3"
 
 # -------------------------------------------------------------
 #           Settings for MM-LSD run (what should be done in this run?)
@@ -121,7 +121,7 @@ if pipname == "ESSP":
     overlap_correction = False
 
 # By default, velocity step is derived empirically from the data, user can override
-auto_vStep = True
+auto_vStep = False
 
 if not auto_vStep:
     manual_vStep = 0.82
