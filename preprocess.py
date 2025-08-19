@@ -217,6 +217,7 @@ if extract_info:
             svnr += 1
 
         all_info.to_csv(dirdir + "Info.csv", index=False)
+        del df
         del all_info
 
     elif pipname == "DRS_3.7":
@@ -480,7 +481,7 @@ if not pipname == "ESSP":
 
     # plt.title(f"spec {ii}")
     rassine_res_file = rassine_res + "rass_" + str(ii) + ".csv"
-    res = pd.read_csv(rassine_res_file)
+    # res = pd.read_csv(rassine_res_file)
     # plt.plot(res["s1d_wave"], res["s1d_flux"])
     # plt.plot(res["continuum_wave"], res["continuum_flux"])
 
@@ -554,7 +555,6 @@ if save_spectra_as_pkl:
                 error_envelope_continuum_normalised[ordr, :] = upper_envelope2(
                     lmd[ordr, :], error_continuum_normalised[ordr, :]
                 )
-
                 # -----------------------------------------------------
 
             # now that the rassine-continuum has been reinterpolated on the e2ds wvl grid, we can continuum-normalise
@@ -572,6 +572,7 @@ if save_spectra_as_pkl:
 
             # -----------------------------------------------------
 
+            del res
             del flux_continuum_normalised
             del lmd
             del continuum_s1dadjusted
@@ -696,6 +697,8 @@ if save_spectra_as_pkl:
             hdul_ccf.close()
             hdul_blaze.close()
 
+            del res
+
     elif pipname == "ESSP":
 
         orders_to_omit = {
@@ -798,10 +801,6 @@ if save_spectra_as_pkl:
 if overlap_correction:
     # MULTIPLICATIVE
 
-    data_dict["spectrum_overlap_corrected"] = {}
-    data_dict["err_overlap_corrected"] = {}
-    data_dict["err_envelope_overlap_corrected"] = {}
-    data_dict["continuum_overlap_corrected"] = {}
 
     for ii in info_file.index:
         print(ii)
