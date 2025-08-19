@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+trace_memory = True
+
+if trace_memory:
+    import tracemalloc
+
+    tracemalloc.start()
 
 import numpy as np
 from astropy.io import fits
@@ -211,6 +217,7 @@ if extract_info:
             svnr += 1
 
         all_info.to_csv(dirdir + "Info.csv", index=False)
+        del all_info
 
     elif pipname == "DRS_3.7":
 
@@ -303,6 +310,8 @@ if extract_info:
             svnr += 1
 
         all_info.to_csv(dirdir + "Info.csv", index=False)
+        del all_info
+
 
     elif pipname == "ESSP":
         run_rassine = False
@@ -379,7 +388,7 @@ if extract_info:
             svnr += 1
 
         all_info.to_csv(dirdir + "Info.csv", index=False)
-
+        del all_info    
 
 info_file = pd.read_csv(dirdir + "Info.csv")
 
@@ -469,25 +478,17 @@ if not pipname == "ESSP":
 
     ii = np.random.choice(info_file.index)
 
-    plt.title(f"spec {ii}")
+    # plt.title(f"spec {ii}")
     rassine_res_file = rassine_res + "rass_" + str(ii) + ".csv"
     res = pd.read_csv(rassine_res_file)
-    plt.plot(res["s1d_wave"], res["s1d_flux"])
-    plt.plot(res["continuum_wave"], res["continuum_flux"])
+    # plt.plot(res["s1d_wave"], res["s1d_flux"])
+    # plt.plot(res["continuum_wave"], res["continuum_flux"])
 
 print(pipname)
 
 if save_spectra_as_pkl:
     if pipname == "DRS_2.3.5":
         ii_no_rassine = []
-
-        data_dict = {}
-        data_dict["spectrum"] = {}
-        # data_dict["spectrum_e2ds"] = {}
-        data_dict["wavelengths"] = {}
-        data_dict["continuum"] = {}
-        data_dict["err"] = {}
-        data_dict["err_envelope"] = {}
 
         print("Found", len(info_file.index), "processed spectra")
 
@@ -561,15 +562,26 @@ if save_spectra_as_pkl:
 
             # -----------------------------------------------------
             # save as npy bc matrices can be easily stored in this format.
-
-            data_dict["spectrum"][ii] = flux_continuum_normalised
+            data_dict = {}
+            data_dict["spectrum"] = flux_continuum_normalised
             # data_dict["spectrum_e2ds"][ii] = flux
-            data_dict["wavelengths"][ii] = lmd
-            data_dict["continuum"][ii] = continuum_s1dadjusted
-            data_dict["err"][ii] = error_continuum_normalised
-            data_dict["err_envelope"][ii] = error_envelope_continuum_normalised
+            data_dict["wavelengths"] = lmd
+            data_dict["continuum"] = continuum_s1dadjusted
+            data_dict["err"] = error_continuum_normalised
+            data_dict["err_envelope"] = error_envelope_continuum_normalised
 
             # -----------------------------------------------------
+
+            del flux_continuum_normalised
+            del lmd
+            del continuum_s1dadjusted
+            del flux_s1dadjusted
+            del error_continuum_normalised
+            del error_envelope_continuum_normalised
+
+            with open(dirdir + f"data_{ii}.pkl", "wb") as f:
+                pickle.dump(data_dict, f)
+
             hdul.close()
             hdul_s1d.close()
             hdul_ccf.close()
@@ -577,14 +589,6 @@ if save_spectra_as_pkl:
     elif pipname == "DRS_3.7":
 
         ii_no_rassine = []
-
-        data_dict = {}
-        data_dict["spectrum"] = {}
-        # data_dict["spectrum_e2ds"] = {}
-        data_dict["wavelengths"] = {}
-        data_dict["continuum"] = {}
-        data_dict["err"] = {}
-        data_dict["err_envelope"] = {}
 
         print("Found", len(info_file.index), "processed spectra")
 
@@ -667,14 +671,26 @@ if save_spectra_as_pkl:
 
             # -----------------------------------------------------
             # save as npy bc matrices can be easily stored in this format.
-
-            data_dict["spectrum"][ii] = flux_continuum_normalised
+            data_dict = {}
+            data_dict["spectrum"] = flux_continuum_normalised
             # data_dict["spectrum_e2ds"][ii] = flux
-            data_dict["wavelengths"][ii] = lmd
-            data_dict["continuum"][ii] = continuum_s1dadjusted
-            data_dict["err"][ii] = error_continuum_normalised
-            data_dict["err_envelope"][ii] = error_envelope_continuum_normalised
+            data_dict["wavelengths"] = lmd
+            data_dict["continuum"] = continuum_s1dadjusted
+            data_dict["err"] = error_continuum_normalised
+            data_dict["err_envelope"] = error_envelope_continuum_normalised
             # -----------------------------------------------------
+            
+            del flux_continuum_normalised
+            del lmd
+            del continuum_s1dadjusted
+            del flux_s1dadjusted
+            del error_continuum_normalised
+            del error_envelope_continuum_normalised
+
+            with open(dirdir + f"data_{ii}.pkl", "wb") as f:
+                pickle.dump(data_dict, f)
+
+            # close all files   
             hdul.close()
             hdul_s1d.close()
             hdul_ccf.close()
@@ -688,14 +704,6 @@ if save_spectra_as_pkl:
             "EXPRES": [0, 1],
             "HARPS": [0, 46],
         }
-
-        data_dict = {}
-        data_dict["spectrum"] = {}
-        data_dict["wavelengths"] = {}
-        data_dict["continuum"] = {}
-        data_dict["err"] = {}
-        data_dict["err_envelope"] = {}
-        data_dict["t_map"] = {}
 
         print("Found", len(info_file.index), "processed spectra")
         for ii in info_file.index:
@@ -755,24 +763,37 @@ if save_spectra_as_pkl:
                     # )
 
                 flux_continuum_normalised = flux_s1dadjusted / continuum_s1dadjusted
-
-                data_dict["spectrum"][ii] = flux_continuum_normalised
-                data_dict["wavelengths"][ii] = lmd
-                data_dict["continuum"][ii] = continuum_s1dadjusted
-                data_dict["err"][ii] = error_continuum_normalised
-                data_dict["err_envelope"][ii] = error_envelope_continuum_normalised
-                data_dict["t_map"][ii] = telluric_map
+                data_dict = {}
+                data_dict["spectrum"] = flux_continuum_normalised
+                data_dict["wavelengths"] = lmd
+                data_dict["continuum"] = continuum_s1dadjusted
+                data_dict["err"] = error_continuum_normalised
+                data_dict["err_envelope"] = error_envelope_continuum_normalised
+                data_dict["t_map"] = telluric_map
                 # -----------------------------------------------------
+                del flux 
+                del error
+                del continuum
 
+                
+                del flux_continuum_normalised
+                del lmd
+                del continuum_s1dadjusted
+                del flux_s1dadjusted
+                del error_continuum_normalised
+                del error_envelope_continuum_normalised
+                del telluric_map
+
+
+                with open(dirdir + f"data_{ii}.pkl", "wb") as f:
+                    pickle.dump(data_dict, f)
+                del data_dict
                 hdul.close()
                 hdul_ccf.close()
 
 
-f = open(dirdir + "data_dict.pkl", "wb")
-pickle.dump(data_dict, f)
-f.close()
-# In[15]:
 
+# In[15]:
 
 if overlap_correction:
     # MULTIPLICATIVE
@@ -798,16 +819,17 @@ if overlap_correction:
             else:
                 wvls1d = s1d_fits[1].data["wavelength_air"]
                 fluxs1d = s1d_fits[1].data["flux"]
-
+        with open(dirdir + f"data_{ii}.pkl", "rb") as f:
+            data_dict = pickle.load(f)
         try:
-            error_continuum_normalised = data_dict["err"][ii]
-            error_envelope_continuum_normalised = data_dict["err_envelope"][ii]
+            error_continuum_normalised = data_dict["err"]
+            error_envelope_continuum_normalised = data_dict["err_envelope"]
         except:
             print(ii, "did not run")
 
-        conts1d = data_dict["continuum"][ii]
-        wvl = data_dict["wavelengths"][ii]
-        flux = data_dict["spectrum"][ii] * conts1d
+        conts1d = data_dict["continuum"]
+        wvl = data_dict["wavelengths"]
+        flux = data_dict["spectrum"] * conts1d
 
         s1dspline = InterpolatedUnivariateSpline(wvls1d, fluxs1d)
         cont_new = np.copy(conts1d)
@@ -860,17 +882,26 @@ if overlap_correction:
             cont_new[order, first_index:] = conts1d[order, first_index:] * ratio1
             cont_new[order + 1, :last_index] = conts1d[order + 1, :last_index] * ratio2
 
-        data_dict["spectrum_overlap_corrected"][ii] = flux / cont_new
-        data_dict["err_overlap_corrected"][ii] = (
+        data_dict["spectrum_overlap_corrected"] = flux / cont_new
+        data_dict["err_overlap_corrected"] = (
             error_continuum_normalised * conts1d / cont_new
         )
-        data_dict["err_envelope_overlap_corrected"][ii] = (
+        data_dict["err_envelope_overlap_corrected"] = (
             error_envelope_continuum_normalised * conts1d / cont_new
         )
         # data_dict["continuum_overlap_corrected"][ii] = cont_new
-    f = open(dirdir + "data_dict.pkl", "wb")
-    pickle.dump(data_dict, f)
-    f.close()
+        with open(dirdir + f"data_{ii}.pkl", "wb") as f:
+            pickle.dump(data_dict, f)
 
+        del data_dict
+
+if trace_memory:
+    current, peak = tracemalloc.get_traced_memory()
+    # import pdb; pdb.set_trace()
+    tracemalloc.stop()
+
+    print("Memory usage")
+    print(f"Current usage: {current / 10 ** 6} MB")
+    print(f"Peak usage: {peak / 10 ** 6} MB")
 
 # In[ ]:
