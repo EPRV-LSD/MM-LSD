@@ -20,7 +20,7 @@ star = "ESSP_EXPRES"
 from datetime import date
 today = date.today()
 #indic = str(today.year)+str(today.month)+str(today.day)
-indic = "1"
+indic = "4"
 
 # -------------------------------------------------------------
 #           Settings for MM-LSD run (what should be done in this run?)

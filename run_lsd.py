@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 # coding: utf-8
 
 # In[2]:
@@ -33,25 +34,6 @@ from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 
 
-def runLSD(values, row_no, col_no, n, m, weights, fluxes):
-    # MATRIX CALCULATIONS USING 'csc_matrix' TO IMPROVE EFFICIENCY
-    # The uncertainties are not computed here (necessitates inverting the MtWM matrix
-
-    # See Lienhard et al. 2022 eq. 4
-
-    M = csc_matrix((values, (row_no, col_no)), shape=(n, m))
-    Mt = M.transpose()
-    MtW = Mt.dot(csc_matrix((weights, (np.arange(n), np.arange(n))), shape=(n, n)))
-    MtWM = MtW.dot(M)
-
-    A = MtWM
-
-    B = MtW.dot(csc_matrix(fluxes).transpose())
-
-    return spsolve(A, B, use_umfpack=True)
-
-
-
 def get_vstep(wlen):
     # get velocity step from wavelength array
     diffs = np.diff(wlen, prepend=np.nan)
@@ -61,79 +43,6 @@ def get_vstep(wlen):
     vel_space = np.round(vel_space, decimals=2)
 
     return vel_space
-
-def worker3_new(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
-    """
-    For given order: perform LSD and extract the common profile, common profile uncertainties. Compute convolution model
-    Parameters
-    ----------
-    order : int
-        First array: periods [d]
-    weights : array orders x pixels
-        Weights of the individual fluxes
-    spectrum : array orders x pixels
-        Fluxes
-    wavelengths : array orders x pixels
-        Wavelength corresponding to the fluxes
-    vlambda : array
-        Central wavelength of absorption lines (VALD3)
-    vdepth : array
-        Depth of absorption lines (VALD3)
-    vel : array
-        Velocity grid to run LSD on (velocity grid for common profile)
-
-    Output:
-    ----------
-    Z : array
-        common profile
-    Zerr : array
-        uncertainty estimates of common profile
-    M.dot(Z) : array
-        convolution model
-    selection : array
-        indices of included pixels
-    """
-
-    # Get data of given order
-
-    # Only include data with weight > 0
-    # Also omit pixels with wavelengths as nans
-    selection = np.where((weights[order, :] > 0) & (~np.isnan(wavelengths[order, :])))[
-        0
-    ]
-    spectrum_o = spectrum[order, :][selection]
-
-    # Don't run if only 2% of order included. Bad order.
-    if len(selection) < 0.02 * len(spectrum):
-        return 0
-
-    wavelengths_o = wavelengths[order, :][selection]
-    weights_o = weights[order, :][selection]
-    # import pdb; pdb.set_trace()
-    # CREATE CONVOLUTION MATRIX
-    # -----------------------------------------------------
-    try:
-        value, row, column = an.cvmt(wavelengths_o, vel, vlambda, vdepth)
-        M = csc_matrix((value, (row, column)), shape=(len(wavelengths_o), len(vel)))
-        # raise ValueError
-    except ValueError:
-        import pdb
-
-        pdb.set_trace()
-    # -----------------------------------------------------
-
-    try:
-        Z, Zerr = runLSD_inv(
-            value, row, column, len(wavelengths_o), len(vel), weights_o, spectrum_o
-        )
-    except RuntimeError:
-
-        # Z = np.ones_like(vel)
-        # Zerr = np.ones_like(vel) * 1e10
-        return 0
-
-    return Z, Zerr, M.dot(Z), selection
-
 
 def worker3(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
     """
@@ -171,7 +80,7 @@ def worker3(order, weights, spectrum, wavelengths, vlambda, vdepth, vel):
 
     # Only include data with weight > 0
     selection = np.where((weights[order, :] > 0) & (~np.isnan(wavelengths[order, :])))[0]
-    spectrum_o = spectrum[order, :][selection]
+    spectrum_o = spectrum[order, :]
 
     # Don't run if only 2% of order included. Bad order.
     # Change to 10 per cent of order included?
@@ -370,14 +279,12 @@ with open(dirdir + "data_dict.pkl", "rb") as f:
     del prov
 
 
-
-
 test_ii = 0
 test_wlen = an.alldata["wavelengths"][test_ii]
-test_spec = an.alldata["spectrum"][test_ii]
 
 if auto_vStep:
     vStep = get_vstep(test_wlen)
+    print(f"Velocity spacing calculated from wavelength array: {vStep} km/s")
 else:
     vStep = manual_vStep
 
@@ -483,7 +390,7 @@ an.alldata["vel_inital"] = vel_inital
 
 
 # choose test spectrum for the first LSD run
-test_ii = 1
+test_ii = 0
 
 an.test_ii = test_ii
 
@@ -505,8 +412,8 @@ for order in testorders:
 
         # import pdb; pdb.set_trace()
         model_o[output[2]] = output[1]
-        # model_h[order, :] = output[1]
         model_h[order, :] = model_o
+        # model_h[order, :] = output[1]
         zlast += output[0]
         count += 1
 zlast /= count
@@ -616,14 +523,19 @@ for ii in iis:
         vel=vel,
     )
     # initialise multiprocessing
-    num_processors = 1
-    if num_processors > 1:
-        with get_context("fork").Pool(processes=num_processors) as p:
-            output = p.map(worker_partial3, [order for order in testorders])
-    else:
-        output = []
-        for order in testorders:
-            output.append(worker_partial3(order))
+    # num_processors = 1
+    # if num_processors > 1:
+    #     with get_context("fork").Pool(processes=num_processors) as p:
+    #         output = p.map(worker_partial3, [order for order in testorders])
+    # else:
+    #     output = []
+    #     for order in testorders:
+    #         output.append(worker_partial3(order))
+
+    with get_context("fork").Pool(processes=num_processors) as p:
+        output = p.map(worker_partial3, [order for order in testorders])
+
+
     # save output into containers
     for order in testorders:
         if output[order] != 0:
@@ -790,10 +702,6 @@ for weight_scheme in weight_schemes:
     no_outliers = np.where(np.abs(drs_norm - np.median(drs_norm)) < 200)[0]
 
     if len(no_outliers) < len(drs_norm):
-
-        import pdb
-
-        pdb.set_trace()
         print(f"Removed {len(drs_norm)-len(no_outliers)} outliers.")
 
     drs_norm = drs_norm[no_outliers]
@@ -850,74 +758,73 @@ if output_intermediate_results:
 
 
 # save results
+injupyternotebook = False
+if not injupyternotebook:
+    yerr_wls = np.zeros((len(lsd_norm)))
+    for count, ii in enumerate(np.asarray(iis)[no_outliers]):
+        rverrc = RVerror(vel, Zs[ii], Zerrs[ii])
+        yerr_wls[count] = rverrc * 1000.0
 
-yerr_wls = np.zeros((len(lsd_norm)))
-for count, ii in enumerate(np.asarray(iis)[no_outliers]):
-    rverrc = RVerror(vel, Zs[ii], Zerrs[ii])
-    yerr_wls[count] = rverrc * 1000.0
+    newres["LSD RV std"] = [np.std(lsd_norm).round(3)]
+    newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
+    newres["DRS RV std"] = [np.std(drs_norm).round(3)]
+    newres["DRS RV MAD"] = [median_abs_deviation(drs_norm).round(3)]
+    newres["sigmafit_used"] = [an.alldata["sigmafit_used"].round(3)]
+    newres["comp time"] = [np.round(time() - t00, 1)]
 
-newres["LSD RV std"] = [np.std(lsd_norm).round(3)]
-newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
-newres["DRS RV std"] = [np.std(drs_norm).round(3)]
-newres["DRS RV MAD"] = [median_abs_deviation(drs_norm).round(3)]
-newres["sigmafit_used"] = [an.alldata["sigmafit_used"].round(3)]
-newres["comp time"] = [np.round(time() - t00, 1)]
+    nn = concat([results, newres])
+    nn.to_csv(resfile, index=False)
 
-nn = concat([results, newres])
-nn.to_csv(resfile, index=False)
-import time
+    print("Results saved in ", resfile)
+    if os.path.exists(rvresfile):
+        f = open(rvresfile, "rb")
+        dth = pickle.load(f)
+        dth[paramnr] = lsd_norm
+        f.close()
+    else:
+        f = open(rvresfile, "wb")
+        dth = {}
+        dth["mjd"] = t
+        dth["rv_ccf"] = drs_norm
+        dth["rv_ccf_err"] = yerr
 
-print("Results saved in ", resfile)
-# time.sleep(4)
-if os.path.exists(rvresfile):
-    f = open(rvresfile, "rb")
-    dth = pickle.load(f)
-    dth[paramnr] = lsd_norm
-    f.close()
-else:
+        dth[paramnr] = lsd_norm
+
     f = open(rvresfile, "wb")
-    dth = {}
-    dth["mjd"] = t
-    dth["rv_ccf"] = drs_norm
-    dth["rv_ccf_err"] = yerr
-
-    dth[paramnr] = lsd_norm
-
-f = open(rvresfile, "wb")
-pickle.dump(dth, f)
-f.close()
-
-if os.path.exists(rverrresfile):
-    f = open(rverrresfile, "rb")
-    dth = pickle.load(f)
-    dth[paramnr] = yerr_wls
+    pickle.dump(dth, f)
     f.close()
-else:
+
+    if os.path.exists(rverrresfile):
+        f = open(rverrresfile, "rb")
+        dth = pickle.load(f)
+        dth[paramnr] = yerr_wls
+        f.close()
+    else:
+        f = open(rverrresfile, "wb")
+        dth = {}
+        dth["mjd"] = t
+        dth["rv_ccf"] = drs_norm
+        dth["rv_ccf_err"] = yerr
+
+        dth[paramnr] = yerr_wls
+
     f = open(rverrresfile, "wb")
-    dth = {}
-    dth["mjd"] = t
-    dth["rv_ccf"] = drs_norm
-    dth["rv_ccf_err"] = yerr
-
-    dth[paramnr] = yerr_wls
-
-f = open(rverrresfile, "wb")
-pickle.dump(dth, f)
-f.close()
-
-if os.path.exists(commonprofilefile):
-    f = open(commonprofilefile, "rb")
-    dth = pickle.load(f)
-    dth[f"vel_{paramnr}"] = vel
-    dth[f"Z_{paramnr}"] = Zs
+    pickle.dump(dth, f)
     f.close()
-else:
-    f = open(commonprofilefile, "wb")
-    dth = {}
-    dth["mjd"] = t
-    dth[f"vel_{paramnr}"] = vel
-    dth[f"Z_{paramnr}"] = Zs
 
-f = open(commonprofilefile, "wb")
-pickle.dump(dth, f)
-f.close()
+    if os.path.exists(commonprofilefile):
+        f = open(commonprofilefile, "rb")
+        dth = pickle.load(f)
+        dth[f"vel_{paramnr}"] = vel
+        dth[f"Z_{paramnr}"] = Zs
+        f.close()
+    else:
+        f = open(commonprofilefile, "wb")
+        dth = {}
+        dth["mjd"] = t
+        dth[f"vel_{paramnr}"] = vel
+        dth[f"Z_{paramnr}"] = Zs
+
+    f = open(commonprofilefile, "wb")
+    pickle.dump(dth, f)
+    f.close()

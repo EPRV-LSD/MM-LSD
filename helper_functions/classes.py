@@ -23,7 +23,7 @@ def runLSD(values, row_no, col_no, n, m, weights, fluxes):
     # MATRIX CALCULATIONS USING 'csc_matrix' TO IMPROVE EFFICIENCY
     # The uncertainties are not computed here (necessitates inverting the MtWM matrix
 
-    # See Lienhard et al. 2022 eq. 4
+    # See Lienhard et al. 2022 eq. 4 
 
     M = csc_matrix((values, (row_no, col_no)), shape=(n, m))
     Mt = M.transpose()
@@ -53,10 +53,6 @@ def runLSD_inv(values, row_no, col_no, n, m, weights, fluxes):
     csc_MtWM = csc_matrix(MtWM)
     try:
         inverse = inv(csc_MtWM)
-    # try:
-    #     inverse = inv(csc_MtWM)
-    # except RuntimeError:
-    #     return np.nan*np.ones(m), np.nan*np.ones_like(MtWM)
 
         Z = inverse.dot(B)
     except RuntimeError:
@@ -262,8 +258,8 @@ class analyse:
             weights = 1.0 / datafile["err"][ii] ** 2
 
             weights[tps_tellurics == 1] = 0
-            weights[np.isnan(spectrum)] = 0.0
-            spectrum[np.isnan(spectrum)] = 0.0
+        weights[np.isnan(spectrum)] = 0.0
+        spectrum[np.isnan(spectrum)] = 0.0
 
         weights[spectrum > self.exclupper] = 0
         weights[spectrum < self.excllower] = 0
@@ -305,7 +301,7 @@ class analyse:
         wavelengths_o = self.wavelengths[order, :]
         weights_o = self.weights[order, :]
 
-        selection = ~np.isnan(wavelengths_o)
+        selection = (~np.isnan(wavelengths_o)) & (weights_o > 0)
         spectrum_o = spectrum_o[selection]
         wavelengths_o = wavelengths_o[selection]
         weights_o = weights_o[selection]
@@ -387,9 +383,7 @@ class analyse:
 
             # define quality map. bad = 1
             q_map[order, exclude] = 1
-            # print(len(q_map[order, :][q_map[order, :] == 1]))
 
-        # print("=====================================")
         # also exclude wavelengths that are only sometimes visible due to barycentric motion (i.e. borders)
 
         bervmin = np.where(info_file["berv"] == info_file["berv"].min())[0][0]
@@ -403,9 +397,6 @@ class analyse:
                 | (self.wavelengths[order, :] < wvlmin)
             )[0]
             q_map[order, :][wo] = 1
-            # print(len(q_map[order, :][q_map[order, :] == 1]))
-
-        # print("=====================================")
 
         # only include fluxes where there is an accepted line and no line deeper than maxdepthparam
         for order in np.arange(self.nr_of_orders):
@@ -436,12 +427,9 @@ class analyse:
 
             nonselection = np.where(~((overlap2 == 0) & (overlap >= 1)))[0]
 
-            import pdb
-
-            # pdb.set_trace()
             q_map[order, nonselection] = 1
             self.q_map = q_map
-            # print(len(q_map[order, :][q_map[order, :] == 1]))
+
             # add quality map to alldata dictionary
             self.alldata["q_map"] = {}
 
@@ -812,22 +800,18 @@ def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
     # set weights to 0 where data impacted by wide lines or model and data do not agree well (additivity etc.)
 
     weights[datafile["q_map"][ii] == 1] = 0
-    # print(weights.sum())
     # -----------------------------------------------------
     # exclude nans
     weights[np.isnan(spectrum)] = 0.0
     spectrum[np.isnan(weights)] = 0.0
     weights[np.isnan(weights)] = 0.0
     spectrum[np.isnan(spectrum)] = 0.0
-    # print(weights.sum())
     spectrum[np.isinf(weights)] = 0.0
     weights[np.isinf(weights)] = 0.0
-    # print(weights.sum())
     weights[datafile["err"][ii] < 0] = 0
     # exclude upper outliers
     weights[spectrum > 0.05] = 0
     weights[spectrum <= -1.0] = 0
-    # print(weights.sum())
     # -----------------------------------------------------
     return weights, spectrum, wavelengths
 
@@ -853,7 +837,7 @@ def extract_rv_from_common_profiles(
     Zerrs = []
 
     for ii in epoch_list:
-        # print(ii)
+
         # ----------------------------------------------------------
         # testing weighting (and normalising) the common profiles of the different orders before addition
 
@@ -929,7 +913,6 @@ def extract_rv_from_common_profiles(
                     popt, pcov, info_dict, mesg, ier  = curve_fit(
                         Gaussian, vel[wo], Z[wo], [-1, mean, sigma_guess, 0], full_output=True
                     )
-                
 
         except Exception as e:
             print(e)

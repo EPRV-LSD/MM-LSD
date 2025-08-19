@@ -20,7 +20,7 @@ star = "Sun"
 from datetime import date
 today = date.today()
 #indic = str(today.year)+str(today.month)+str(today.day)
-indic = "3"
+indic = "9"
 
 # -------------------------------------------------------------
 #           Settings for MM-LSD run (what should be done in this run?)
@@ -38,20 +38,20 @@ run_on_grid = True
 #           Folder locations
 # -------------------------------------------------------------
 
-#home
-rt = "/Users/b.s.lakeland@bham.ac.uk/Documents/Projects/LSD"
-#folder where the input.py file is located. 
-stardir = './stars/'+star+'/'
-#results of MM-LSD will be saved here
-resdir = stardir+f"results_{indic}/"
+# home
+rt = "/Users/b.s.lakeland@bham.ac.uk/Documents/Projects/LSD/"
+# folder where the input.py file is located.
+stardir = "./stars/" + star + "/"
+# results of MM-LSD will be saved here
+resdir = stardir + f"results_{indic}/"
 
 
+# location of RASSINE installation
+rassine_loc = rt + "Rassine_public"
 
-#location of RASSINE installation
-rassine_loc = rt + "/Rassine_public"
+# location of data
+datadir = rt + "/development/data/"
 
-#location of data
-datadir = rt + "/MMLSD_gh/data/"
 
 #your targets data
 maindir = datadir + star
@@ -121,7 +121,7 @@ if pipname == "ESSP":
     overlap_correction = False
 
 # By default, velocity step is derived empirically from the data, user can override
-auto_vStep = False
+auto_vStep = True
 
 if not auto_vStep:
     manual_vStep = 0.82
