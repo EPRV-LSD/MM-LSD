@@ -140,8 +140,6 @@ except:
     injupyternotebook = False
 
 
-# In[3]:
-
 injupyternotebook = False
 
 # star name
@@ -156,8 +154,6 @@ inf_name = stardir + "input.py"
 exec(open(inf_name).read())
 
 
-# In[5]:
-
 
 syspath.insert(0, "./helper_functions/")
 
@@ -169,7 +165,9 @@ from classes import (
     runLSD_inv,
     prep_spec3,
     RVerror,
-    read_datafile
+    read_datafile,
+    read_LSD_results
+
 )
 
 
@@ -196,7 +194,6 @@ exclwidelinesparam = prms["exclwidelinesparam"][paramnr]
 rassoption = prms["rassoption"][paramnr]
 erroption = prms["erroption"][paramnr]
 telloption = prms["telloption"][paramnr]
-
 # here we save the results of this parameter combination
 newres = DataFrame()
 
@@ -204,6 +201,7 @@ newres = DataFrame()
 for key in prms.keys():
     newres[key] = [prms[key][paramnr]]
 
+del prms
 
 # ### Information about spectra
 
@@ -230,6 +228,8 @@ sp.VALD_data()
 #
 
 an = Analyse(sp.VALDlambdas, sp.VALDdepths, pipname, dirdir)
+
+del sp
 
 # TODO: This has to change...
 # with open(dirdir + "data_dict.pkl", "rb") as f:
@@ -268,6 +268,7 @@ else:
     vStep = manual_vStep
     print(f"Velocity spacing set to {vStep} km/s")
 del test_data
+del test_wlen
 
 
 # index numbers of spectra
@@ -370,8 +371,7 @@ an.test_ii = test_ii
 # TODO: THis seems like it can be refactored
 
 an.prep_spec(iis[test_ii], erroption)
-print('DID THIS!!!')
-# exit()
+
 # choose echelle orders to run code on (all here)
 testorders = np.arange(nr_of_orders)
 
@@ -395,7 +395,7 @@ zlast /= count
 
 an.model_h = model_h
 an.div = np.abs(model_h - an.spectrum)
-
+del model_h
 
 # first common profile
 
@@ -467,6 +467,15 @@ vel = an.vel
 
 
 t_start = time()
+if trace_memory:
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Memory usage before running LSD: {current / 10**6} MB, peak: {peak / 10**6} MB")
+    tracemalloc.stop()
+    tracemalloc.start()
+
+lsd_resdir = datadir + star + '/LSD_results/'
+if not os.path.exists(lsd_resdir):
+    os.makedirs(lsd_resdir)
 
 for ii in iis:
     if output_intermediate_results:
@@ -481,13 +490,13 @@ for ii in iis:
     )
 
     # empty containers
-    LSD_results[ii] = {}
+    LSD_results = {}
     common_profile_all_orders = np.zeros((np.shape(wavelengths)[0], len(vel)))
     common_profile_all_orders_err = np.zeros((np.shape(wavelengths)[0], len(vel)))
 
     # NOTE: I don't know why the following line doesn't have the first 20 orders...
-    MZ = np.zeros((np.shape(wavelengths)[0], len(spectrum[20, :])))
-    incl_map = np.zeros((np.shape(MZ)))
+    # MZ = np.zeros((np.shape(wavelengths)[0], len(spectrum[20, :])))
+    incl_map = np.zeros((np.shape(wavelengths)[0], len(spectrum[20, :])))
 
     # partial function for multiprocessing
     worker_partial3 = partial(
@@ -495,8 +504,8 @@ for ii in iis:
         weights=weights,
         spectrum=spectrum,
         wavelengths=wavelengths,
-        vlambda=sp.VALDlambdas,
-        vdepth=sp.VALDdepths,
+        vlambda=an.VALDlambdas,
+        vdepth=an.VALDdepths,
         vel=vel,
     )
     # initialise multiprocessing
@@ -518,15 +527,18 @@ for ii in iis:
             common_profile_all_orders[order, :] = output[order][0]
             common_profile_all_orders_err[order, :] = output[order][1]
             selection = output[order][3]
-            MZ[order, :][selection] = output[order][2]
+            # MZ[order, :][selection] = output[order][2]
             incl_map[order, :][selection] = np.ones((len(selection)))
+
+
+
 
     # save results in dict
     # FIXME: This dict might not be good for memory efficiency
-    LSD_results[ii]["common_profile"] = common_profile_all_orders
-    LSD_results[ii]["common_profile_err"] = common_profile_all_orders_err
-    LSD_results[ii]["LSD_spectrum_model"] = MZ  # LSD_spectrum
-    LSD_results[ii]["incl_map"] = incl_map
+    LSD_results["common_profile"] = common_profile_all_orders
+    LSD_results["common_profile_err"] = common_profile_all_orders_err
+    # LSD_results[ii]["LSD_spectrum_model"] = MZ  # LSD_spectrum
+    LSD_results["incl_map"] = incl_map
 
     # plt.figure(figsize=(7, 5))
 
@@ -554,11 +566,15 @@ for ii in iis:
 
     # plt.savefig(an.resdir + f"Common_profiles.pdf")
     # plt.close()
-
+    with open(lsd_resdir + f"LSD_results_{ii}.pkl", "wb") as f:
+        pickle.dump(LSD_results, f)
+    del LSD_results
 
 # define weight matrix to compute order weights (to combine common profiles to master common profile)
 
 wmat = np.ones((len(iis), nr_of_orders))
+
+an.clean_memory()
 
 for count1, ii in enumerate(iis):
 
@@ -575,9 +591,9 @@ for count1, ii in enumerate(iis):
             )
         )
         pre_weights = 1.0 / (err ** 2)
-
-    pre_weights[LSD_results[ii]["incl_map"] == 0] = 0
-
+    LSD_results = read_LSD_results(ii, lsd_resdir)
+    pre_weights[LSD_results["incl_map"] == 0] = 0
+    del LSD_results
     for count, order in enumerate(testorders):
         wmat[count1, order] = np.nanmean(pre_weights[order, :])
 
@@ -599,7 +615,7 @@ for count, sigma in enumerate(testsigma):
     an.sigmafit = sigma
 
     lsd_rv_orig, Zs, Z, Zerrs = an.extract_rv_from_common_profiles(
-        LSD_results,
+        lsd_resdir,
         iis,
         order_choice,
         weight_orders=weight_schemes[0],
@@ -638,6 +654,8 @@ else:
 t = info_file["mjd"].values
 
 
+
+
 for weight_scheme in weight_schemes:
     use_uncertainties = True
     # only second one is used for plots later on
@@ -649,11 +667,11 @@ for weight_scheme in weight_schemes:
 
     # this extracts the RV information
     lsd_rv_orig, Zs, Z, Zerrs = an.extract_rv_from_common_profiles(
-        LSD_results,
+        lsd_resdir,
         iis,
         order_choice,
-        weight_orders=weight_scheme,
-        use_uncertainties=use_uncertainties,
+        weight_orders=weight_schemes[0],
+        use_uncertainties=True,
     )
 
     if pipname == "DRS_3.7":

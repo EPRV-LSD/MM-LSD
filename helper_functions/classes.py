@@ -31,6 +31,13 @@ def read_datafile(ii, datadir, shift_fluxes=True):
         data['spectrum'] = data['spectrum'] - 1.0
     return data
 
+def read_LSD_results(ii, lsd_resdir):
+    assert os.path.exists(lsd_resdir)
+    filename = f'LSD_results_{ii}.pkl'
+    assert filename in os.listdir(lsd_resdir)
+    with open(lsd_resdir + filename, 'rb') as f:
+        data = pickle.load(f)
+    return data
 
 def runLSD(values, row_no, col_no, n, m, weights, fluxes):
     # MATRIX CALCULATIONS USING 'csc_matrix' TO IMPROVE EFFICIENCY
@@ -228,61 +235,61 @@ class Analyse:
         self.pipname = pipname
         self.c = 299792.458
         self.dirdir = dirdir
+    '''
+    def prep_spec(self, ii, datafile, erroption):
+        """
+        Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
+        Parameters
+        ----------
+        ii : int
+            identifier of spectrum
+        datafile : dict
+            contains all the information for the spectrum
 
-    # def prep_spec(self, ii, datafile, erroption):
-    #     """
-    #     Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
-    #     Parameters
-    #     ----------
-    #     ii : int
-    #         identifier of spectrum
-    #     datafile : dict
-    #         contains all the information for the spectrum
+        Output
+        ----------
+        spectrum : array orders x pixels
+            Spectrum as input except that nans are set to 0 (and 0 if -1 in telluric model (for EXPRES))
+        wavelengths: array orders x pixels
+            wavelengths from datafile
+        weights: array orders x pixels
+            Weights for LSD (1/err**2, 0 if affected by telluric (according to criterion), 0 if flux above continuum by 5 per cent or 0.1 below -1 (i.e. negative flux)
+        """
+        # version of prep_spec3 (below) with less options and no q_map. just define wvl, spec, and weight matrices. (excluding deep tellurics, nans, and outliers)
+        spectrum = np.copy(datafile["spectrum"][ii])
+        if not self.pipname == "ESSP":
+            tps_tellurics = self.tapas_tellurics[ii]
 
-    #     Output
-    #     ----------
-    #     spectrum : array orders x pixels
-    #         Spectrum as input except that nans are set to 0 (and 0 if -1 in telluric model (for EXPRES))
-    #     wavelengths: array orders x pixels
-    #         wavelengths from datafile
-    #     weights: array orders x pixels
-    #         Weights for LSD (1/err**2, 0 if affected by telluric (according to criterion), 0 if flux above continuum by 5 per cent or 0.1 below -1 (i.e. negative flux)
-    #     """
-    #     # version of prep_spec3 (below) with less options and no q_map. just define wvl, spec, and weight matrices. (excluding deep tellurics, nans, and outliers)
-    #     spectrum = np.copy(datafile["spectrum"][ii])
-    #     if not self.pipname == "ESSP":
-    #         tps_tellurics = self.tapas_tellurics[ii]
+            spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
 
-    #         spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
+            wavelengths = np.copy(datafile["wavelengths"][ii])
+            if erroption == 0:
+                weights = 1.0 / datafile["err"][ii] ** 2
+            if erroption == 1:
+                weights = 1.0 / datafile["err_envelope"][ii] ** 2
 
-    #         wavelengths = np.copy(datafile["wavelengths"][ii])
-    #         if erroption == 0:
-    #             weights = 1.0 / datafile["err"][ii] ** 2
-    #         if erroption == 1:
-    #             weights = 1.0 / datafile["err_envelope"][ii] ** 2
+            # CHANGED
+            weights[tps_tellurics < 0.9] = 0
+            spectrum[tps_tellurics == -1] = 0
 
-    #         # CHANGED
-    #         weights[tps_tellurics < 0.9] = 0
-    #         spectrum[tps_tellurics == -1] = 0
+        else:
+            tps_tellurics = datafile["t_map"][ii]
 
-    #     else:
-    #         tps_tellurics = datafile["t_map"][ii]
+            wavelengths = np.copy(datafile["wavelengths"][ii])
+            weights = 1.0 / datafile["err"][ii] ** 2
 
-    #         wavelengths = np.copy(datafile["wavelengths"][ii])
-    #         weights = 1.0 / datafile["err"][ii] ** 2
+            weights[tps_tellurics == 1] = 0
+        weights[np.isnan(spectrum)] = 0.0
+        spectrum[np.isnan(spectrum)] = 0.0
 
-    #         weights[tps_tellurics == 1] = 0
-    #     weights[np.isnan(spectrum)] = 0.0
-    #     spectrum[np.isnan(spectrum)] = 0.0
+        weights[spectrum > self.exclupper] = 0
+        weights[spectrum < self.excllower] = 0
 
-    #     weights[spectrum > self.exclupper] = 0
-    #     weights[spectrum < self.excllower] = 0
-
-    #     self.weights = weights
-    #     self.spectrum = spectrum
-    #     self.wavelengths = wavelengths
-    #     self.nr_of_orders, self.nr_of_pixels = np.shape(spectrum)
-
+        self.weights = weights
+        self.spectrum = spectrum
+        self.wavelengths = wavelengths
+        self.nr_of_orders, self.nr_of_pixels = np.shape(spectrum)
+    '''
 
     def prep_spec(self, ii, erroption):
         """
@@ -915,7 +922,7 @@ class Analyse:
 
     def extract_rv_from_common_profiles(
         self,
-        LSD_results,
+        lsd_resdir,
         epoch_list,
         testorders,
         weight_orders,
@@ -927,20 +934,27 @@ class Analyse:
         Zs = []
         Zerrs = []
 
+
+        if weight_orders == "flux weight_fixed_throughout_time_series":
+            test_LSD_results = read_LSD_results(self.test_ii, lsd_resdir)
+
+
+            test_data = read_datafile(self.test_ii, self.dirdir)
+            pre_weights = 1.0 / (test_data["err_smoothed"] ** 2)
+            pre_weights[test_LSD_results["incl_map"] == 0] = 0
+            del test_LSD_results
+            del test_data
+
         for ii in epoch_list:
 
             # ----------------------------------------------------------
             # testing weighting (and normalising) the common profiles of the different orders before addition
-
-            lsdres = np.copy(LSD_results[ii]["common_profile"])
-            lsdreserr = np.copy(LSD_results[ii]["common_profile_err"])
+            LSD_results = read_LSD_results(ii, lsd_resdir)
+            lsdres = np.copy(LSD_results["common_profile"])
+            lsdreserr = np.copy(LSD_results["common_profile_err"])
             weightsum = 0
             common_profile_err = np.zeros((len(lsdres[0])))
             if weight_orders == "flux weight_fixed_throughout_time_series":
-                test_data = read_datafile(self.test_ii, self.dirdir)
-
-                pre_weights = 1.0 / (test_data["err_smoothed"] ** 2)
-                pre_weights[LSD_results[self.test_ii]["incl_map"] == 0] = 0
 
                 for count, order in enumerate(testorders):
 
@@ -966,6 +980,7 @@ class Analyse:
 
                 common_profile_err = common_profile_err / weightsum**2
                 common_profile_err = np.sqrt(common_profile_err)
+
 
             Z = np.nansum(lsdres, axis=0) / weightsum
 
@@ -1013,11 +1028,25 @@ class Analyse:
             # save results of different epochs to list
 
             rv_all.extend([popt[1]])
+            del LSD_results
 
         rv_all = np.asarray(rv_all)
         rv_all *= 1000
         return rv_all, Zs, Z, Zerrs
 
+
+    def clean_memory(self):
+        """
+        Delete unnecessary variables to save memory.
+        """
+        del self.spectrum
+        del self.wavelengths
+        del self.weights
+        del self.q_map_master
+        if "t_map_master" in self.__dict__:
+            del self.t_map_master   
+        del self.model_h
+        del self.div
 
 # -------------------------------------------------------------
 #           GET APPROPRIATE WEIGHTS FOR LSD RUN
