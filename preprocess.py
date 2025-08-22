@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-trace_memory = False
+trace_memory = True
 
 if trace_memory:
     import tracemalloc

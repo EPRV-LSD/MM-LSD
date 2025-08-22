@@ -4,7 +4,7 @@
 
 # In[2]:
 
-trace_memory = False
+trace_memory = True
 if trace_memory:
     import tracemalloc
     tracemalloc.start()
@@ -467,11 +467,11 @@ vel = an.vel
 
 
 t_start = time()
-if trace_memory:
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Memory usage before running LSD: {current / 10**6} MB, peak: {peak / 10**6} MB")
-    tracemalloc.stop()
-    tracemalloc.start()
+# if trace_memory:
+#     current, peak = tracemalloc.get_traced_memory()
+#     print(f"Memory usage before running LSD: {current / 10**6} MB, peak: {peak / 10**6} MB")
+#     tracemalloc.stop()
+#     tracemalloc.start()
 
 lsd_resdir = datadir + star + '/LSD_results/'
 if not os.path.exists(lsd_resdir):
