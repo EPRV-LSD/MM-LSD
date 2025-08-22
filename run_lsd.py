@@ -8,6 +8,10 @@ trace_memory = True
 if trace_memory:
     import tracemalloc
     tracemalloc.start()
+trace_memory = True
+if trace_memory:
+    import tracemalloc
+    tracemalloc.start()
 
 import numpy as np
 from pandas import read_csv, DataFrame, concat
@@ -38,7 +42,7 @@ from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 start_time = time()
 
-
+start_time = time()
 def get_vstep(wlen):
     # get velocity step from wavelength array
     diffs = np.diff(wlen, prepend=np.nan)
@@ -141,34 +145,12 @@ except:
     injupyternotebook = False
 
 
-# In[3]:
-
 injupyternotebook = False
 
-
-if not injupyternotebook:
-    # star name
-    star = argv[1]
-
-    output_intermediate_results = False
-else:
-    star = "Sun"
-    # star = "teststar"
-    indic = "1"
-
-    from IPython import display
-    from IPython.core.display import display, HTML
-    from bokeh.io import output_file
-    from bokeh.plotting import Figure, output_notebook, show, save, ColumnDataSource
-
-    display(HTML("<style>.container { width:90% !important; }</style>"))
-    output_notebook()
-
-    output_intermediate_results = True
+# star name
+star = argv[1]
 
 output_intermediate_results = False
-
-# In[4]:
 
 
 stardir = "./stars/" + star + "/"
@@ -177,31 +159,28 @@ inf_name = stardir + "input.py"
 exec(open(inf_name).read())
 
 
-# In[5]:
-
 
 syspath.insert(0, "./helper_functions/")
 
 from classes import (
     stellar_parameters,
-    analyse,
-    extract_rv_from_common_profiles,
+    Analyse,
+    # extract_rv_from_common_profiles,
     Gaussian,
     runLSD_inv,
     prep_spec3,
     RVerror,
+    read_datafile,
+    read_LSD_results
+
 )
 
 
-if injupyternotebook:
-    paramnr = 0
-    # results so far
 
-else:
-    paramnr = int(argv[2])
-    # results so far
-    resfile = f"{resdir}results_{star}_{indic}.csv"
-    results = read_csv(resfile)
+paramnr = int(argv[2])
+# results so far
+resfile = f"{resdir}results_{star}_{indic}.csv"
+results = read_csv(resfile)
 
 print(paramnr)
 
@@ -220,7 +199,6 @@ exclwidelinesparam = prms["exclwidelinesparam"][paramnr]
 rassoption = prms["rassoption"][paramnr]
 erroption = prms["erroption"][paramnr]
 telloption = prms["telloption"][paramnr]
-
 # here we save the results of this parameter combination
 newres = DataFrame()
 
@@ -228,12 +206,14 @@ newres = DataFrame()
 for key in prms.keys():
     newres[key] = [prms[key][paramnr]]
 
+del prms
 
 # ### Information about spectra
 
 info_file = read_csv(dirdir + "Info.csv")
 
 # set system RV. i.e. RV that is used to convert absorption line wavelengths from rest frame to stellar frame
+# TODO: This should be handled in the preprocessing stage
 if pipname == "ESSP":
     # systemrv = 83
     systemrv = info_file["rv_ccf"][0] / 1000.0
@@ -252,53 +232,55 @@ sp.VALD_data()
 # ### Load data from 1_preprocess notebook
 #
 
-# In[9]:
+an = Analyse(sp.VALDlambdas, sp.VALDdepths, pipname, dirdir)
 
+del sp
 
-an = analyse(c, sp.VALDlambdas, sp.VALDdepths, pipname)
+# TODO: This has to change...
+# with open(dirdir + "data_dict.pkl", "rb") as f:
+#     prov = pickle.load(f)
+#     an.alldata = {}
+#     if not overlap_correction:
+#         an.alldata["spectrum"] = prov["spectrum"]
+#         an.alldata["err"] = prov["err"]
+#         an.alldata["err_envelope"] = np.zeros_like(prov["err"])
+#         an.alldata["wavelengths"] = prov["wavelengths"]
+#     elif rassoption == 1:
+#         an.alldata["spectrum"] = prov["spectrum_overlap_corrected"]
+#         an.alldata["err"] = prov["err_overlap_corrected"]
+#         an.alldata["err_envelope"] = prov["err_envelope_overlap_corrected"]
+#         an.alldata["wavelengths"] = prov["wavelengths"]
 
-
-# In[10]:
-
-
-with open(dirdir + "data_dict.pkl", "rb") as f:
-    prov = pickle.load(f)
-    an.alldata = {}
-    if not overlap_correction:
-        an.alldata["spectrum"] = prov["spectrum"]
-        an.alldata["err"] = prov["err"]
-        an.alldata["err_envelope"] = np.zeros_like(prov["err"])
-        an.alldata["wavelengths"] = prov["wavelengths"]
-    elif rassoption == 1:
-        an.alldata["spectrum"] = prov["spectrum_overlap_corrected"]
-        an.alldata["err"] = prov["err_overlap_corrected"]
-        an.alldata["err_envelope"] = prov["err_envelope_overlap_corrected"]
-        an.alldata["wavelengths"] = prov["wavelengths"]
-
-    if pipname == "ESSP":
-        an.alldata["t_map"] = prov["t_map"]
+#     if pipname == "ESSP":
+#         an.alldata["t_map"] = prov["t_map"]
     
 
     
 
-    del prov
+    # del prov
 
 
 test_ii = 0
-test_wlen = an.alldata["wavelengths"][test_ii]
-
+iis = list(info_file.index)
+test_data = read_datafile(test_ii, dirdir)
+nr_of_orders, nr_of_pixels = test_data["spectrum"].shape
 if auto_vStep:
+    test_wlen = test_data['wavelengths']
+
     vStep = get_vstep(test_wlen)
     print(f"Velocity spacing calculated from wavelength array: {vStep} km/s")
 else:
     vStep = manual_vStep
+    print(f"Velocity spacing set to {vStep} km/s")
+del test_data
+del test_wlen
 
-iis = list(an.alldata["spectrum"].keys())
 
 # index numbers of spectra
 an.iis = iis
 
 # see input.py
+# TODO: change Analyse.init()
 an.excllower = excllower
 an.exclupper = exclupper
 an.telluric_cut = telluric_cut
@@ -308,11 +290,13 @@ an.maxdepthparam = maxdepthparam
 an.exclwidelinesparam = exclwidelinesparam
 an.telloption = telloption
 
-nr_of_orders, nr_of_pixels = an.alldata["spectrum"][0].shape
+
 
 # shift fluxes to between -1 and 0 for lsd procedure
-for key in iis:
-    an.alldata["spectrum"][key] = an.alldata["spectrum"][key] - 1
+
+
+# for key in iis:
+#     an.alldata["spectrum"][key] = an.alldata["spectrum"][key] - 1
 
 
 an.tapas_tellurics = {}
@@ -321,7 +305,7 @@ an.resdir = resdir
 
 # In[12]:
 
-
+# TODO: Handle this in Analyse.init()
 an.barycentric_to_stellar_restframe = {}
 an.observatory_to_barycentric_restframe = {}
 an.observatory_to_stellar_restframe = {}
@@ -335,20 +319,16 @@ for ii in iis:
     )
 
 
-# In[13]:
-
-
-if output_intermediate_results:
-    sp.inspect_data(
-        0, an.alldata["spectrum"][0] + 1, an.alldata["wavelengths"][0], 5000, 20
-    )
-
-
 # ### Get tapas telluric information
 
-# In[14]:
 
+# TODO: This is not how I thought the TAPAS files worked. 
+# Not a single array, nobs x spectrum pickle file...
+
+# TODO: How to change this to work generally for spectrographs...
+# TODO: 
 if pipname != "ESSP":
+
 
     compute_tellurics = True
 
@@ -372,13 +352,6 @@ if pipname != "ESSP":
         with open("./tellurics/tellurics" + star + ".pkl", "wb") as f:
             pickle.dump(an.tapas_tellurics, f)
 
-else:
-
-    pass
-
-# ### Set preliminary velocity grid
-#
-
 
 # set velocity grid
 
@@ -387,7 +360,7 @@ dvel = 20
 vel_inital = np.arange(systemrv - dvel, systemrv + dvel, vStep)
 
 # set upper limit to number of absorption lines of depth min_depth_required within a region (other regions excluded)
-an.alldata["vel_inital"] = vel_inital
+an.vel_initial = vel_inital
 
 
 #  FIRST RUN OF LSD (TO GET FWHM OF SPECTRA, FIRST COMMON PROFILE,
@@ -395,12 +368,14 @@ an.alldata["vel_inital"] = vel_inital
 
 
 # choose test spectrum for the first LSD run
-test_ii = 0
 
 an.test_ii = test_ii
 
 # get fluxes, wavelengths, and weights for first spectrum
-an.prep_spec(iis[test_ii], an.alldata, erroption)
+
+# TODO: THis seems like it can be refactored
+
+an.prep_spec(iis[test_ii], erroption)
 
 # choose echelle orders to run code on (all here)
 testorders = np.arange(nr_of_orders)
@@ -425,7 +400,7 @@ zlast /= count
 
 an.model_h = model_h
 an.div = np.abs(model_h - an.spectrum)
-
+del model_h
 
 # first common profile
 
@@ -443,11 +418,12 @@ if output_intermediate_results:
     plt.xlabel("Vel")
     plt.title(np.round(vel_hwhm, 2))
     plt.legend()
+    plt.close()
 
 # estimate typical half-width of an absorption line as 5 times the hwhm
 # will be multiplied by wvl when used
 
-an.alldata["initial_v_halfwidth"] = vel_hwhm
+an.initial_v_halfwidth = vel_hwhm
 
 
 # ### Set velocity grid
@@ -459,10 +435,10 @@ dvel = np.round(vel_hwhm) * velgridwidth
 vel = np.arange(systemrv - dvel, systemrv + dvel, vStep)
 
 # set upper limit to number of absorption lines of depth min_depth_required within a region (other regions excluded)
-an.alldata["vel"] = vel
+an.vel = vel
 
 # how much should we exclude near data points with high model-spectrum deviation?
-an.alldata["absline_halfwidth_include"] = (vel.max() - vel.min() + 1.0) / 2.0 / c
+an.absline_halfwidth_include = (vel.max() - vel.min() + 1.0) / 2.0 / c
 
 
 # ### EXCLUDE SPECTRAL REGIONS WITH HIGH MODEL-SPECTRUM DEVIATION
@@ -472,8 +448,9 @@ an.get_wide_lines()
 an.get_q_map(info_file)
 # get telluric map.
 
-if not pipname == "ESSP":
-    an.get_t_map()
+# if not pipname == "ESSP":
+#     # TODO: This will require many files to be read in 
+#     an.get_t_map()
 
 if paramnr == 0:
     an.show_map()
@@ -491,31 +468,40 @@ testorders = np.arange(nr_of_orders)
 # save results here
 LSD_results = {}
 
-vel = an.alldata["vel"]
+vel = an.vel
 
 
 t_start = time()
+# if trace_memory:
+#     current, peak = tracemalloc.get_traced_memory()
+#     print(f"Memory usage before running LSD: {current / 10**6} MB, peak: {peak / 10**6} MB")
+#     tracemalloc.stop()
+#     tracemalloc.start()
+
+lsd_resdir = datadir + star + '/LSD_results/'
+if not os.path.exists(lsd_resdir):
+    os.makedirs(lsd_resdir)
 
 for ii in iis:
     if output_intermediate_results:
         print(ii, np.round(time() - t_start, 2))
 
     # get weights, spectrum, wavelengths after excluding some data according to parameters.
-    weights, spectrum, wavelengths = prep_spec3(
-        an.alldata,
+    weights, spectrum, wavelengths = an.prep_spec3(
         ii,
-        an.tapas_tellurics,
         erroption=erroption,
         usetapas=usetapas,
         pipname=pipname,
     )
 
     # empty containers
-    LSD_results[ii] = {}
+    LSD_results = {}
     common_profile_all_orders = np.zeros((np.shape(wavelengths)[0], len(vel)))
     common_profile_all_orders_err = np.zeros((np.shape(wavelengths)[0], len(vel)))
-    MZ = np.zeros((np.shape(wavelengths)[0], len(an.alldata["spectrum"][ii][20, :])))
-    incl_map = np.zeros((np.shape(MZ)))
+
+    # NOTE: I don't know why the following line doesn't have the first 20 orders...
+    # MZ = np.zeros((np.shape(wavelengths)[0], len(spectrum[20, :])))
+    incl_map = np.zeros((np.shape(wavelengths)[0], len(spectrum[20, :])))
 
     # partial function for multiprocessing
     worker_partial3 = partial(
@@ -523,22 +509,21 @@ for ii in iis:
         weights=weights,
         spectrum=spectrum,
         wavelengths=wavelengths,
-        vlambda=sp.VALDlambdas,
-        vdepth=sp.VALDdepths,
+        vlambda=an.VALDlambdas,
+        vdepth=an.VALDdepths,
         vel=vel,
     )
     # initialise multiprocessing
-    # num_processors = 1
-    # if num_processors > 1:
-    #     with get_context("fork").Pool(processes=num_processors) as p:
-    #         output = p.map(worker_partial3, [order for order in testorders])
-    # else:
-    #     output = []
-    #     for order in testorders:
-    #         output.append(worker_partial3(order))
+    if num_processors > 1:
+        with get_context("fork").Pool(processes=num_processors) as p:
+            output = p.map(worker_partial3, [order for order in testorders])
+    else:
+        output = []
+        for order in testorders:
+            output.append(worker_partial3(order))
 
-    with get_context("fork").Pool(processes=num_processors) as p:
-        output = p.map(worker_partial3, [order for order in testorders])
+    # with get_context("fork").Pool(processes=num_processors) as p:
+    #     output = p.map(worker_partial3, [order for order in testorders])
 
 
     # save output into containers
@@ -547,95 +532,95 @@ for ii in iis:
             common_profile_all_orders[order, :] = output[order][0]
             common_profile_all_orders_err[order, :] = output[order][1]
             selection = output[order][3]
-            MZ[order, :][selection] = output[order][2]
+            # MZ[order, :][selection] = output[order][2]
             incl_map[order, :][selection] = np.ones((len(selection)))
 
+
+
+
     # save results in dict
-    LSD_results[ii]["common_profile"] = common_profile_all_orders
-    LSD_results[ii]["common_profile_err"] = common_profile_all_orders_err
-    LSD_results[ii]["LSD_spectrum_model"] = MZ  # LSD_spectrum
-    LSD_results[ii]["incl_map"] = incl_map
+    # FIXME: This dict might not be good for memory efficiency
+    LSD_results["common_profile"] = common_profile_all_orders
+    LSD_results["common_profile_err"] = common_profile_all_orders_err
+    # LSD_results[ii]["LSD_spectrum_model"] = MZ  # LSD_spectrum
+    LSD_results["incl_map"] = incl_map
 
-if injupyternotebook:
-    print("Computation time:", np.round((time() - t_start) / 60.0, 1), "minutes")
+    # plt.figure(figsize=(7, 5))
 
+    # for order in range(len(LSD_results[test_ii]["common_profile"])):
 
-# inspect the individual common profiles
-if output_intermediate_results:
+    #     color = rgb2hex(rainbow(order / nr_of_orders))
 
-    plt.figure(figsize=(7, 5))
+    #     plt.plot(vel, LSD_results[ii]["common_profile"][order], color=color)
 
-    for order in range(len(LSD_results[test_ii]["common_profile"])):
+    #     if order // 10 == order / 10:
+    #         plt.plot(
+    #             vel,
+    #             LSD_results[ii]["common_profile"][order],
+    #             color=color,
+    #             label="Order " + str(order),
+    #         )
+    #     else:
+    #         plt.plot(vel, LSD_results[ii]["common_profile"][order], color=color)
 
-        color = rgb2hex(rainbow(order / nr_of_orders))
+    # plt.legend()
+    # plt.ylim(-1.3, 0.2)
 
-        plt.plot(vel, LSD_results[ii]["common_profile"][order], color=color)
+    # plt.xlabel("Velocity grid [km/s]")
+    # plt.title("Common profiles of individual orders")
 
-        if order // 10 == order / 10:
-            plt.plot(
-                vel,
-                LSD_results[ii]["common_profile"][order],
-                color=color,
-                label="Order " + str(order),
-            )
-        else:
-            plt.plot(vel, LSD_results[ii]["common_profile"][order], color=color)
-
-    plt.legend()
-    plt.ylim(-1.3, 0.2)
-
-    plt.xlabel("Velocity grid [km/s]")
-    plt.title("Common profiles of individual orders")
-
-    plt.savefig(an.resdir + f"Common_profiles.pdf")
-
-
-# In[25]:
-
+    # plt.savefig(an.resdir + f"Common_profiles.pdf")
+    # plt.close()
+    with open(lsd_resdir + f"LSD_results_{ii}.pkl", "wb") as f:
+        pickle.dump(LSD_results, f)
+    del LSD_results
 
 # define weight matrix to compute order weights (to combine common profiles to master common profile)
 
 wmat = np.ones((len(iis), nr_of_orders))
 
+an.clean_memory()
+
 for count1, ii in enumerate(iis):
+
+    data = read_datafile(ii, dirdir)
     if erroption == 0:
-        pre_weights = 1.0 / (an.alldata["err"][ii] ** 2)
+        pre_weights = 1.0 / (data["err"] ** 2)
     if erroption == 1:
-        pre_weights = 1.0 / (an.alldata["err_envelope"][ii] ** 2)
+        pre_weights = 1.0 / (data["err_envelope"] ** 2)
     if erroption == 2:
         err = np.transpose(
             np.tile(
-                np.median(an.alldata["err"][ii], axis=1),
-                (np.shape(an.alldata["err"][0])[1], 1),
+                np.median(data["err"], axis=1),
+                (np.shape(data["err"])[1], 1),
             )
         )
         pre_weights = 1.0 / (err ** 2)
-
-    pre_weights[LSD_results[ii]["incl_map"] == 0] = 0
-
+    LSD_results = read_LSD_results(ii, lsd_resdir)
+    pre_weights[LSD_results["incl_map"] == 0] = 0
+    del LSD_results
     for count, order in enumerate(testorders):
         wmat[count1, order] = np.nanmean(pre_weights[order, :])
 
-an.alldata["order_weight"] = np.mean(wmat, axis=0)
+an.order_weight = np.mean(wmat, axis=0)
 
 
 # In[26]:
 
 
 # check excluding outer parts of common profile. see paper.
-testsigma = np.arange(1.0, 5, step=0.25) * an.alldata["initial_v_halfwidth"]
+testsigma = np.arange(1.0, 5, step=0.25) * an.initial_v_halfwidth
 
 
 std_dep_on_sigma = np.zeros((len(testsigma)))
-an.alldata["fitfunction"] = "Gaussian"
+an.fitfunction = "Gaussian"
 order_choice = np.arange(nr_of_orders)
 
 for count, sigma in enumerate(testsigma):
-    an.alldata["sigmafit"] = sigma
+    an.sigmafit = sigma
 
-    lsd_rv_orig, Zs, Z, Zerrs = extract_rv_from_common_profiles(
-        LSD_results,
-        an.alldata,
+    lsd_rv_orig, Zs, Z, Zerrs = an.extract_rv_from_common_profiles(
+        lsd_resdir,
         iis,
         order_choice,
         weight_orders=weight_schemes[0],
@@ -650,8 +635,8 @@ for count, sigma in enumerate(testsigma):
     lsd_norm_t = lsd_norm_t[no_outliers]
     std_dep_on_sigma[count] = np.std(lsd_norm_t)
 
-an.alldata["sigmafit"] = testsigma[np.argmin(std_dep_on_sigma)]
-an.alldata["sigmafit_used"] = np.copy(testsigma[np.argmin(std_dep_on_sigma)])
+an.sigmafit = testsigma[np.argmin(std_dep_on_sigma)]
+an.sigmafit_used = np.copy(testsigma[np.argmin(std_dep_on_sigma)])
 
 
 # In[27]:
@@ -674,6 +659,8 @@ else:
 t = info_file["mjd"].values
 
 
+
+
 for weight_scheme in weight_schemes:
     use_uncertainties = True
     # only second one is used for plots later on
@@ -684,13 +671,12 @@ for weight_scheme in weight_schemes:
     # choose an LSD container
 
     # this extracts the RV information
-    lsd_rv_orig, Zs, Z, Zerrs = extract_rv_from_common_profiles(
-        LSD_results,
-        an.alldata,
+    lsd_rv_orig, Zs, Z, Zerrs = an.extract_rv_from_common_profiles(
+        lsd_resdir,
         iis,
         order_choice,
-        weight_orders=weight_scheme,
-        use_uncertainties=use_uncertainties,
+        weight_orders=weight_schemes[0],
+        use_uncertainties=True,
     )
 
     if pipname == "DRS_3.7":
@@ -774,7 +760,7 @@ if not injupyternotebook:
     newres["LSD RV MAD"] = [median_abs_deviation(lsd_norm).round(3)]
     newres["DRS RV std"] = [np.std(drs_norm).round(3)]
     newres["DRS RV MAD"] = [median_abs_deviation(drs_norm).round(3)]
-    newres["sigmafit_used"] = [an.alldata["sigmafit_used"].round(3)]
+    newres["sigmafit_used"] = [an.sigmafit_used.round(3)]
     newres["comp time"] = [np.round(time() - t00, 1)]
 
     nn = concat([results, newres])

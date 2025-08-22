@@ -1,3 +1,6 @@
+import os
+import pickle
+
 import numpy as np
 import itertools
 import pandas as pd
@@ -18,6 +21,23 @@ from scipy.signal import savgol_filter
 #           RUN LSD
 # -------------------------------------------------------------
 
+def read_datafile(ii, datadir, shift_fluxes=True):
+    assert os.path.exists(datadir)
+    filename = f'data_{ii}.pkl'
+    assert filename in os.listdir(datadir)
+    with open(datadir + filename, 'rb') as f:
+        data = pickle.load(f)
+    if shift_fluxes:
+        data['spectrum'] = data['spectrum'] - 1.0
+    return data
+
+def read_LSD_results(ii, lsd_resdir):
+    assert os.path.exists(lsd_resdir)
+    filename = f'LSD_results_{ii}.pkl'
+    assert filename in os.listdir(lsd_resdir)
+    with open(lsd_resdir + filename, 'rb') as f:
+        data = pickle.load(f)
+    return data
 
 def runLSD(values, row_no, col_no, n, m, weights, fluxes):
     # MATRIX CALCULATIONS USING 'csc_matrix' TO IMPROVE EFFICIENCY
@@ -208,13 +228,14 @@ class stellar_parameters:
         plt.show(block=False)
 
 
-class analyse:
-    def __init__(self, c, VALDlambdas, VALDdepths, pipname):
-        self.c = c
+class Analyse:
+    def __init__(self, VALDlambdas, VALDdepths, pipname, dirdir):
         self.VALDlambdas = VALDlambdas
         self.VALDdepths = VALDdepths
         self.pipname = pipname
-
+        self.c = 299792.458
+        self.dirdir = dirdir
+    '''
     def prep_spec(self, ii, datafile, erroption):
         """
         Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
@@ -258,6 +279,67 @@ class analyse:
             weights = 1.0 / datafile["err"][ii] ** 2
 
             weights[tps_tellurics == 1] = 0
+        weights[np.isnan(spectrum)] = 0.0
+        spectrum[np.isnan(spectrum)] = 0.0
+
+        weights[spectrum > self.exclupper] = 0
+        weights[spectrum < self.excllower] = 0
+
+        self.weights = weights
+        self.spectrum = spectrum
+        self.wavelengths = wavelengths
+        self.nr_of_orders, self.nr_of_pixels = np.shape(spectrum)
+    '''
+
+    def prep_spec(self, ii, erroption):
+        """
+        Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
+        Parameters
+        ----------
+        ii : int
+            identifier of spectrum
+        datafile : dict
+            contains all the information for the spectrum
+
+        Output
+        ----------
+        spectrum : array orders x pixels
+            Spectrum as input except that nans are set to 0 (and 0 if -1 in telluric model (for EXPRES))
+        wavelengths: array orders x pixels
+            wavelengths from datafile
+        weights: array orders x pixels
+            Weights for LSD (1/err**2, 0 if affected by telluric (according to criterion), 0 if flux above continuum by 5 per cent or 0.1 below -1 (i.e. negative flux)
+        """
+        # version of prep_spec3 (below) with less options and no q_map. just define wvl, spec, and weight matrices. (excluding deep tellurics, nans, and outliers)
+
+        datafile = read_datafile(ii, self.dirdir)
+
+        spectrum = np.copy(datafile["spectrum"])
+        if not self.pipname == "ESSP":
+            tps_tellurics = self.tapas_tellurics[ii]
+
+            spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
+
+            wavelengths = np.copy(datafile["wavelengths"])
+            if erroption == 0:
+                weights = 1.0 / datafile["err"] ** 2
+            if erroption == 1:
+                weights = 1.0 / datafile["err_envelope"] ** 2
+
+            # CHANGED
+            weights[tps_tellurics < 0.9] = 0
+            spectrum[tps_tellurics == -1] = 0
+
+        else:
+            tps_tellurics = datafile["t_map"]
+
+            wavelengths = np.copy(datafile["wavelengths"])
+            weights = 1.0 / datafile["err"] ** 2
+
+            weights[tps_tellurics == 1] = 0
+
+            weights[np.isnan(wavelengths)] = 0
+
         weights[np.isnan(spectrum)] = 0.0
         spectrum[np.isnan(spectrum)] = 0.0
 
@@ -341,7 +423,7 @@ class analyse:
         # wvls: in barycentric rest frame
 
         if len(self.wide_lines) > 0:
-            self.wide_lines /= self.barycentric_to_stellar_restframe[iis[test_ii]]
+            self.wide_lines /= self.barycentric_to_stellar_restframe[self.test_ii]
 
     def get_q_map(self, info_file):
         # get the quality map based on the input above.
@@ -356,7 +438,7 @@ class analyse:
             ovlp = overlaps(
                 wvl_h_order,
                 wvl_h_order[peaks],
-                self.alldata["absline_halfwidth_include"] * np.mean(wvl_h_order),
+                self.absline_halfwidth_include * np.mean(wvl_h_order),
             )
 
             # check if the current order has any wide_lines in it
@@ -389,14 +471,21 @@ class analyse:
         bervmin = np.where(info_file["berv"] == info_file["berv"].min())[0][0]
         bervmax = np.where(info_file["berv"] == info_file["berv"].max())[0][0]
 
+        data_bervmin = read_datafile(bervmin, self.dirdir)
+        data_bervmax = read_datafile(bervmax, self.dirdir)
+
+        
         for order in np.arange(self.nr_of_orders):
-            wvlmin = np.nanmin(self.alldata["wavelengths"][bervmax][order])
-            wvlmax = np.nanmax(self.alldata["wavelengths"][bervmin][order])
+            wvlmin = np.nanmin(data_bervmax["wavelengths"][order])
+            wvlmax = np.nanmax(data_bervmin["wavelengths"][order])
             wo = np.where(
                 (self.wavelengths[order, :] > wvlmax)
                 | (self.wavelengths[order, :] < wvlmin)
             )[0]
             q_map[order, :][wo] = 1
+        
+        del data_bervmin
+        del data_bervmax
 
         # only include fluxes where there is an accepted line and no line deeper than maxdepthparam
         for order in np.arange(self.nr_of_orders):
@@ -415,48 +504,50 @@ class analyse:
                 wavelengths_o,
                 VALDlambdas_here[VALDdepths_here > self.mindepthparam]
                 / self.barycentric_to_stellar_restframe[self.test_ii],
-                self.alldata["absline_halfwidth_include"] * np.nanmean(wavelengths_o),
+                self.absline_halfwidth_include * np.nanmean(wavelengths_o),
             )
 
             overlap2 = overlaps(
                 wavelengths_o,
                 VALDlambdas_here[VALDdepths_here > self.maxdepthparam]
                 / self.barycentric_to_stellar_restframe[self.test_ii],
-                self.alldata["absline_halfwidth_include"] * np.nanmean(wavelengths_o),
+                self.absline_halfwidth_include * np.nanmean(wavelengths_o),
             )
 
             nonselection = np.where(~((overlap2 == 0) & (overlap >= 1)))[0]
 
             q_map[order, nonselection] = 1
-            self.q_map = q_map
+            self.q_map_master = q_map
 
-            # add quality map to alldata dictionary
-            self.alldata["q_map"] = {}
 
-            for ii in self.iis:
-                self.alldata["q_map"][ii] = np.zeros((np.shape(q_map)))
+    # def interpolate_q_map(self, ii):
+    #         # add quality map to alldata dictionary
 
-            for order in np.arange(self.nr_of_orders):
+    #         q_map = np.zeros_like(self.q_map_master)
+            # for ii in self.iis:
+            #     self.alldata["q_map"][ii] = np.zeros((np.shape(q_map)))
 
-                wvl_h_order = self.wavelengths[order, :]
+            # for order in np.arange(self.nr_of_orders):
 
-                # interpolate to wvls of other spectra
-                fct = interp1d(
-                    wvl_h_order, self.q_map[order, :], bounds_error=False, fill_value=1
-                )
-                for ii in self.iis:
-                    wvlo = self.alldata["wavelengths"][ii][order]
-                    self.alldata["q_map"][ii][order, :] = np.round(fct(wvlo))
-                    # uncertainty = 0? suspicious.
-                    zero_error = np.where(self.alldata["err"][ii][order, :] == 0)[0]
-                    self.alldata["q_map"][ii][order, :][zero_error] = 1
+            #     wvl_h_order = self.wavelengths[order, :]
 
-    def get_t_map(self):
-        self.alldata["t_map"] = {}
+            #     # interpolate to wvls of other spectra
+            #     fct = interp1d(
+            #         wvl_h_order, self.q_map[order, :], bounds_error=False, fill_value=1
+            #     )
+            #     for ii in self.iis:
+            #         wvlo = self.alldata["wavelengths"][ii][order]
+            #         self.alldata["q_map"][ii][order, :] = np.round(fct(wvlo))
+            #         # uncertainty = 0? suspicious.
+            #         zero_error = np.where(self.alldata["err"][ii][order, :] == 0)[0]
+            #         self.alldata["q_map"][ii][order, :][zero_error] = 1
+
+    def get_t_map(self, ii):
 
         barytelluricmap = np.zeros(np.shape(self.spectrum))
-        barytelluric_referencewvl = self.alldata["wavelengths"][self.test_ii]
-
+        test_data = read_datafile(ii, self.dirdir)
+        barytelluric_referencewvl = test_data["wavelengths"]
+        data = read_datafile(ii, self.dirdir)
         ########
 
         # exclude any barycentric wavelength if it is ever affected by telluric line deeper than telluric_cut
@@ -466,22 +557,23 @@ class analyse:
         for order in np.arange(self.nr_of_orders):
             # reinterpolate to pixel space of first spectrum. -> same wvls in barycentric frame will be excluded for all spectra
 
-            for ii in self.iis:
-                # bary wavelengths affected by tellurics for this spectrum and order
-                x = self.alldata["wavelengths"][ii][order]
-                y = np.zeros((self.nr_of_pixels))
+
+            # bary wavelengths affected by tellurics for this spectrum and order
+            x = data["wavelengths"][order]
+            y = np.zeros((self.nr_of_pixels))
+            if self.pipname != "ESSP":
                 y[self.tapas_tellurics[ii][order] < (1.0 - self.telluric_cut)] = 1
 
-                fct = interp1d(x, y, bounds_error=False, fill_value=1)
-                # interpolate to barytelluric_referencewvl
+            fct = interp1d(x, y, bounds_error=False, fill_value=1)
+            # interpolate to barytelluric_referencewvl
 
-                # deep_tellurics_in_pixel_space_of_reference_spectrum
-                dtipsors = np.round(fct(barytelluric_referencewvl[order, :]))
-                barytelluricmap[order, :][dtipsors == 1] = 1
+            # deep_tellurics_in_pixel_space_of_reference_spectrum
+            dtipsors = np.round(fct(barytelluric_referencewvl[order, :]))
+            barytelluricmap[order, :][dtipsors == 1] = 1
 
         # initialise
         for ii in self.iis:
-            self.alldata["t_map"][ii] = np.zeros(np.shape(self.spectrum))
+            t_map = np.zeros(np.shape(self.spectrum))
 
         # interpolate to pixels
 
@@ -494,21 +586,24 @@ class analyse:
                 fill_value=1,
             )
             for ii in self.iis:
-                wvlo = self.alldata["wavelengths"][ii][order]
-                if self.telloption == 1:
-                    self.alldata["t_map"][ii][order, :] = np.round(fct(wvlo))
+                wvlo = data["wavelengths"][order]
+                if self.telloption == 1 or self.pipname == "ESSP":
+                    t_map[order, :] = np.round(fct(wvlo))
                 else:
-                    self.alldata["t_map"][ii][order, :][
+                    t_map[order, :][
                         self.tapas_tellurics[ii][order] < (1.0 - self.telluric_cut)
                     ] = 1
+        return t_map
+    
 
     def show_map(self):
 
+        self.t_map_master = self.get_t_map(self.test_ii)
         plt.figure(figsize=(10, 10))
         plt.xlabel("Pixel number", fontsize=20)
         plt.ylabel("Spectral order", fontsize=20)
 
-        qm = self.alldata["q_map"][self.test_ii]
+        qm = self.q_map_master
 
         for order in range(self.nr_of_orders):
             # plt.plot(np.arange(len(qm[order,:]))[qm[order,:]>0],order*qm[order,:][qm[order,:]>0],".",color="blue")
@@ -530,7 +625,7 @@ class analyse:
                     color="cornflowerblue",
                 )
 
-        qm = self.alldata["t_map"][self.test_ii]
+        qm = self.t_map_master
         for order in range(self.nr_of_orders):
             if order == 0:
                 plt.plot(
@@ -550,7 +645,7 @@ class analyse:
                     color="palevioletred",
                 )
 
-        qm = self.alldata["q_map"][self.test_ii]
+        qm = self.q_map_master
         for order in range(self.nr_of_orders):
             if order == 0:
                 plt.plot(
@@ -723,14 +818,242 @@ class analyse:
             value2 = np.hstack((value2, np.bincount(samejs, vstl1)))
             column2 = np.hstack((column2, j1[whereuniquejindex]))
         return value2, row2, column2
+    
 
+
+
+    def prep_spec3(self, ii, erroption, usetapas, pipname):
+        """
+        Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
+        Parameters
+        ----------
+        datafile : dict
+            Contains all the information for the spectrum
+        ii : int
+            Identifier of spectrum
+        weighting: str
+            Which weighting scheme to use
+        usetapas: Bool
+            Divide by telluric model and mask deep tellurics?
+        Output
+        ----------
+        weights: array orders x pixels
+        spectrum : array orders x pixels
+        wavelengths: array orders x pixels
+            wavelengths from datafile
+        """
+        # lSD velocity grid
+
+        # data for later
+
+        datafile = read_datafile(ii, self.dirdir)
+        spectrum = datafile["spectrum"]
+        wavelengths = datafile["wavelengths"]
+        # -----------------------------------------------------
+
+        # -----------------------------------------------------
+
+        # choose weighting scheme
+
+        if not pipname == "ESSP":
+            if erroption == 0:
+                weights = 1.0 / datafile["err"] ** 2
+
+            if erroption == 1:
+                weights = 1.0 / datafile["err_envelope"] ** 2
+
+            if erroption == 2:
+                err = np.transpose(
+                    np.tile(
+                        np.nanmedian(datafile["err"], axis=1),
+                        (np.shape(datafile["err"])[1], 1),
+                    )
+                )
+                weights = 1.0 / err**2
+
+            # -----------------------------------------------------
+
+            # divide by telluric transmission spectrum
+
+
+            if usetapas:
+                tps_tellurics = self.tapas_tellurics[ii]
+                spectrum = (spectrum + 1.0) / tps_tellurics - 1.0
+
+            # set weight of data impacted by tellurics to 0
+            t_map = self.get_t_map(ii)
+            weights[t_map == 1] = 0
+            # set spectrum to 0 here (divided by tellurics before). source of potential errors. better set to 0.
+            spectrum[tps_tellurics == -1] = 0
+        else:
+            weights = 1.0 / datafile["err"] ** 2
+            weights[datafile["t_map"] == 1] = 0
+
+        # set weights to 0 where data impacted by wide lines or model and data do not agree well (additivity etc.)
+        
+        # interpolate q_map_master to this spectrum
+        q_map = np.zeros_like(self.q_map_master)
+        for order in np.arange(self.nr_of_orders):
+            wvl_h_order = wavelengths[order, :]
+            fct = interp1d(
+                        wvl_h_order, self.q_map_master[order, :], bounds_error=False, fill_value=1
+                    )
+            wvlo = wavelengths[order, :]
+            q_map[order, :] = np.round(fct(wvlo))
+            # uncertainty = 0? suspicious.
+            zero_error = np.where(datafile["err"][order, :] == 0)[0]
+            q_map[order, :][zero_error] = 1
+
+        weights[q_map == 1] = 0
+        # -----------------------------------------------------
+        # exclude nans
+        weights[np.isnan(spectrum)] = 0.0
+        spectrum[np.isnan(weights)] = 0.0
+        weights[np.isnan(weights)] = 0.0
+        spectrum[np.isnan(spectrum)] = 0.0
+        spectrum[np.isinf(weights)] = 0.0
+        weights[np.isinf(weights)] = 0.0
+        weights[datafile["err"] < 0] = 0
+        # exclude upper outliers
+        weights[spectrum > 0.05] = 0
+        weights[spectrum <= -1.0] = 0
+        # -----------------------------------------------------
+        return weights, spectrum, wavelengths
+
+    def extract_rv_from_common_profiles(
+        self,
+        lsd_resdir,
+        epoch_list,
+        testorders,
+        weight_orders,
+        use_uncertainties,
+    ):
+
+        rv_all = []
+        vel = self.vel
+        Zs = []
+        Zerrs = []
+
+
+        if weight_orders == "flux weight_fixed_throughout_time_series":
+            test_LSD_results = read_LSD_results(self.test_ii, lsd_resdir)
+
+
+            test_data = read_datafile(self.test_ii, self.dirdir)
+            pre_weights = 1.0 / (test_data["err_smoothed"] ** 2)
+            pre_weights[test_LSD_results["incl_map"] == 0] = 0
+            del test_LSD_results
+            del test_data
+
+        for ii in epoch_list:
+
+            # ----------------------------------------------------------
+            # testing weighting (and normalising) the common profiles of the different orders before addition
+            LSD_results = read_LSD_results(ii, lsd_resdir)
+            lsdres = np.copy(LSD_results["common_profile"])
+            lsdreserr = np.copy(LSD_results["common_profile_err"])
+            weightsum = 0
+            common_profile_err = np.zeros((len(lsdres[0])))
+            if weight_orders == "flux weight_fixed_throughout_time_series":
+
+                for count, order in enumerate(testorders):
+
+                    order_weight = np.nanmean(pre_weights[order, :])
+
+                    weightsum += order_weight
+
+                    common_profile_err += order_weight**2 * lsdreserr[order, :] ** 2
+                    lsdres[order, :] = lsdres[order, :] * order_weight
+
+                common_profile_err = common_profile_err / weightsum**2
+                common_profile_err = np.sqrt(common_profile_err)
+
+            if weight_orders == "flux weight_can_vary":
+                for count, order in enumerate(testorders):
+
+                    order_weight = np.copy(self.order_weight[order])
+
+                    weightsum += order_weight
+
+                    common_profile_err += order_weight**2 * lsdreserr[order, :] ** 2
+                    lsdres[order, :] = lsdres[order, :] * order_weight
+
+                common_profile_err = common_profile_err / weightsum**2
+                common_profile_err = np.sqrt(common_profile_err)
+
+
+            Z = np.nansum(lsdres, axis=0) / weightsum
+
+            Zs.extend([Z])
+            Zerrs.extend([common_profile_err])
+
+            # ----------------------------------------------------------
+            # get first estimates of mean(/summed) common profile minimum
+
+            # savitzky golay filter to smooth data
+
+            yhat = savgol_filter(Z, max(int(int(len(vel) / 10) * 2 + 1), 5), 3)
+            mean = vel[np.argmin(yhat)]
+
+            # ----------------------------------------------------------
+            # FIT GAUSSIAN TO THE DATA
+            n = len(Z)
+            wo = np.where(
+                (vel > mean - self.sigmafit) & (vel < mean + self.sigmafit)
+            )[0]
+
+            sigma_guess = self.initial_v_halfwidth / np.sqrt(np.log(2.0) * 2.0)
+
+            try:
+                if self.fitfunction == "Gaussian":
+                    if use_uncertainties:
+                        popt, pcov, info_dict, mesg, ier = curve_fit(
+                            Gaussian,
+                            vel[wo],
+                            Z[wo],
+                            [-1, mean, sigma_guess, 0],
+                            sigma=common_profile_err[wo],
+                            full_output=True,
+                        )
+                    else:
+                        popt, pcov, info_dict, mesg, ier  = curve_fit(
+                            Gaussian, vel[wo], Z[wo], [-1, mean, sigma_guess, 0], full_output=True
+                        )
+
+            except Exception as e:
+                print(e)
+                popt = [-9999999, -9999999, -9999999, -9999999]
+
+            # ----------------------------------------------------------
+            # save results of different epochs to list
+
+            rv_all.extend([popt[1]])
+            del LSD_results
+
+        rv_all = np.asarray(rv_all)
+        rv_all *= 1000
+        return rv_all, Zs, Z, Zerrs
+
+
+    def clean_memory(self):
+        """
+        Delete unnecessary variables to save memory.
+        """
+        del self.spectrum
+        del self.wavelengths
+        del self.weights
+        del self.q_map_master
+        if "t_map_master" in self.__dict__:
+            del self.t_map_master   
+        del self.model_h
+        del self.div
 
 # -------------------------------------------------------------
 #           GET APPROPRIATE WEIGHTS FOR LSD RUN
 # -------------------------------------------------------------
 
 
-def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
+def prep_spec3(ii, tapas_tellurics, erroption, usetapas, pipname, q_map_master, vel):
     """
     Get spectrum, associated wavelengths, and uncertainties, tellurics. Compute weights. ONLY TO GET SOME FIRST INFORMATION ABOUT THE SPECTRUM RV AND COMMON PROFILE.
     Parameters
@@ -751,9 +1074,11 @@ def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
         wavelengths from datafile
     """
     # lSD velocity grid
-    vel = datafile["vel"]
+    vel
 
     # data for later
+
+    datafile = read_datafile(ii, dirdir)
     spectrum = np.copy(datafile["spectrum"][ii])
     wavelengths = np.copy(datafile["wavelengths"][ii])
     # -----------------------------------------------------
@@ -798,7 +1123,7 @@ def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
         # print(weights.sum())
 
     # set weights to 0 where data impacted by wide lines or model and data do not agree well (additivity etc.)
-
+    
     weights[datafile["q_map"][ii] == 1] = 0
     # -----------------------------------------------------
     # exclude nans
@@ -822,110 +1147,7 @@ def prep_spec3(datafile, ii, tapas_tellurics, erroption, usetapas, pipname):
 
 
 # analyse common spectra as saved in LSD_results. get RV.
-def extract_rv_from_common_profiles(
-    LSD_results,
-    alldata,
-    epoch_list,
-    testorders,
-    weight_orders,
-    use_uncertainties,
-):
 
-    rv_all = []
-    vel = alldata["vel"]
-    Zs = []
-    Zerrs = []
-
-    for ii in epoch_list:
-
-        # ----------------------------------------------------------
-        # testing weighting (and normalising) the common profiles of the different orders before addition
-
-        lsdres = np.copy(LSD_results[ii]["common_profile"])
-        lsdreserr = np.copy(LSD_results[ii]["common_profile_err"])
-        weightsum = 0
-        common_profile_err = np.zeros((len(lsdres[0])))
-
-        if weight_orders == "flux weight_fixed_throughout_time_series":
-
-            pre_weights = 1.0 / (alldata["err_smoothed"][alldata["iis"][0]] ** 2)
-            pre_weights[LSD_results[alldata["iis"][0]]["incl_map"] == 0] = 0
-
-            for count, order in enumerate(testorders):
-
-                order_weight = np.nanmean(pre_weights[order, :])
-
-                weightsum += order_weight
-
-                common_profile_err += order_weight**2 * lsdreserr[order, :] ** 2
-                lsdres[order, :] = lsdres[order, :] * order_weight
-
-            common_profile_err = common_profile_err / weightsum**2
-            common_profile_err = np.sqrt(common_profile_err)
-
-        if weight_orders == "flux weight_can_vary":
-            for count, order in enumerate(testorders):
-
-                order_weight = np.copy(alldata["order_weight"][order])
-
-                weightsum += order_weight
-
-                common_profile_err += order_weight**2 * lsdreserr[order, :] ** 2
-                lsdres[order, :] = lsdres[order, :] * order_weight
-
-            common_profile_err = common_profile_err / weightsum**2
-            common_profile_err = np.sqrt(common_profile_err)
-
-        Z = np.nansum(lsdres, axis=0) / weightsum
-
-        Zs.extend([Z])
-        Zerrs.extend([common_profile_err])
-
-        # ----------------------------------------------------------
-        # get first estimates of mean(/summed) common profile minimum
-
-        # savitzky golay filter to smooth data
-
-        yhat = savgol_filter(Z, max(int(int(len(vel) / 10) * 2 + 1), 5), 3)
-        mean = vel[np.argmin(yhat)]
-
-        # ----------------------------------------------------------
-        # FIT GAUSSIAN TO THE DATA
-        n = len(Z)
-        wo = np.where(
-            (vel > mean - alldata["sigmafit"]) & (vel < mean + alldata["sigmafit"])
-        )[0]
-
-        sigma_guess = alldata["initial_v_halfwidth"] / np.sqrt(np.log(2.0) * 2.0)
-
-        try:
-            if alldata["fitfunction"] == "Gaussian":
-                if use_uncertainties:
-                    popt, pcov, info_dict, mesg, ier = curve_fit(
-                        Gaussian,
-                        vel[wo],
-                        Z[wo],
-                        [-1, mean, sigma_guess, 0],
-                        sigma=common_profile_err[wo],
-                        full_output=True,
-                    )
-                else:
-                    popt, pcov, info_dict, mesg, ier  = curve_fit(
-                        Gaussian, vel[wo], Z[wo], [-1, mean, sigma_guess, 0], full_output=True
-                    )
-
-        except Exception as e:
-            print(e)
-            popt = [-9999999, -9999999, -9999999, -9999999]
-
-        # ----------------------------------------------------------
-        # save results of different epochs to list
-
-        rv_all.extend([popt[1]])
-
-    rv_all = np.asarray(rv_all)
-    rv_all *= 1000
-    return rv_all, Zs, Z, Zerrs
 
 
 def numerical_gradient(vel, profile):

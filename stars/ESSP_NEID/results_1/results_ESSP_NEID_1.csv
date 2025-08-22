@@ -1,2 +1,6 @@
 max_nr_of_specs,velgridwidth,telluric_cut,mindepthparam,maxdepthparam,modelspecdeviationcut,exclwidelinesparam,telloption,erroption,rassoption,LSD RV std,LSD RV MAD,DRS RV std,DRS RV MAD,sigmafit_used,comp time
+<<<<<<< HEAD
 10000.0,2.5,0.2,0.1,0.8,0.5,0.0,1.0,0.0,1.0,1.888,1.177,2.303,1.505,3.529,156.8
+=======
+10000.0,2.5,0.2,0.1,0.8,0.5,0.0,1.0,0.0,1.0,1.888,1.178,2.303,1.505,3.529,84.6
+>>>>>>> memory_improvements
