@@ -4,6 +4,10 @@
 
 # In[2]:
 
+trace_memory = True
+if trace_memory:
+    import tracemalloc
+    tracemalloc.start()
 
 import numpy as np
 from pandas import read_csv, DataFrame, concat
@@ -32,6 +36,7 @@ from scipy.sparse.linalg import inv, spsolve
 from scipy.interpolate import interp1d, LSQUnivariateSpline
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
+start_time = time()
 
 
 def get_vstep(wlen):
@@ -828,3 +833,11 @@ if not injupyternotebook:
     f = open(commonprofilefile, "wb")
     pickle.dump(dth, f)
     f.close()
+
+if trace_memory:
+    current, peak = tracemalloc.get_traced_memory()
+    print("LSD:")
+    print("peak memory usage is", peak / 10 ** 6, "MB")
+    tracemalloc.stop()
+
+print(f"Computation time: {np.round(time() - start_time, 2)} seconds")

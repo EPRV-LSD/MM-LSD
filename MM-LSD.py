@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+trace_memory = True
+if trace_memory:
+    import tracemalloc
+    
+    tracemalloc.start()
 
 import numpy as np
 import sys
@@ -372,3 +377,9 @@ if run_on_grid:
 
 print(f"\nDone. Saved results in {resdir}")
 
+if trace_memory:
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6} MB")
+    print(f"Peak memory usage is {peak / 10**6} MB")    
+    tracemalloc.stop()
+    

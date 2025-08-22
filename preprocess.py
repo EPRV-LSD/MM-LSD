@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-
+trace_memory = True
+if trace_memory:
+    import tracemalloc
+    tracemalloc.start()
 import numpy as np
 from astropy.io import fits
 from astropy.time import Time
@@ -874,3 +877,8 @@ if overlap_correction:
 
 
 # In[ ]:
+if trace_memory:
+    current, peak = tracemalloc.get_traced_memory()
+    print("Preprocessing:")
+    print("peak memory usage is", peak / 10 ** 6, "MB")
+    tracemalloc.stop()
